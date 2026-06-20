@@ -1,0 +1,79 @@
+# XcodeGen spec — `xcodegen generate` で NeatZip.xcodeproj を生成する。
+# 設計: docs/DESIGN.md（§4 アーキテクチャ / §8 セットアップ / §9 バンドルID・エンタイトルメント）
+name: NeatZip
+
+options:
+  bundleIdPrefix: app.neatzip
+  deploymentTarget:
+    macOS: "13.0"          # WindowGroup + .windowResizability(.contentSize) が macOS 13+
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+# エンジンはローカルパッケージに隔離（DESIGN.md §5 #7）。SSZipArchive 依存は CleanZipKit が所有
+packages:
+  CleanZipKit:
+    path: Packages/CleanZipKit
+
+# 全ターゲット共通のビルド設定
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"          # Swift 5 言語モード（シングルトン/DispatchQueue をそのまま通す）
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""          # ローカルは未設定（ビルド確認は CODE_SIGNING_ALLOWED=NO）
+    ENABLE_HARDENED_RUNTIME: YES  # Developer ID 前提（§9）
+
+targets:
+  # ── 本体アプリ: 非サンドボックス（Developer ID）。元の隣にその場書き込み（§4） ──
+  NeatZip:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: CleanZipKit
+      - target: NeatZipFinderExtension   # appex を本体に embed（自動で Embed App Extensions フェーズ）
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip
+        PRODUCT_NAME: NeatZip
+        ENABLE_APP_SANDBOX: NO            # 本体はサンドボックス OFF
+        COMBINE_HIDPI_IMAGES: YES
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleName: NeatZip
+        CFBundleDisplayName: NeatZip
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        LSApplicationCategoryType: public.app-category.utilities
+        ITSAppUsesNonExemptEncryption: false
+        NSHumanReadableCopyright: ""
+
+  # ── Finder Sync 拡張: サンドボックス必須（§4/§9）。役割は handoff のみ ──
+  NeatZipFinderExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip.FinderExtension
+        PRODUCT_NAME: NeatZipFinderExtension
+    info:
+      path: Extension/Info.plist
+      properties:
+        CFBundleName: NeatZipFinderExtension
+        CFBundleDisplayName: NeatZip Finder Extension
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.FinderSync
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FinderSyncExtension
+    entitlements:
+      path: Extension/NeatZipFinderExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true

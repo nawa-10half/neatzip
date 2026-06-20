@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Xcode / SwiftPM
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+
+# XcodeGen 生成物（project.yml から `xcodegen generate` で再生成）
+*.xcodeproj
+App/Info.plist
+Extension/Info.plist
+Extension/NeatZipFinderExtension.entitlements
