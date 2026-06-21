@@ -215,6 +215,40 @@ final class CleanZipTests: XCTestCase {
         XCTAssertNotEqual(u.status, 0, "unzip が AES を開けてしまった（AES になっていない疑い）")
     }
 
+    // MARK: - 統合: 空ディレクトリ保持（Finder Compress 同等の構造再現）
+
+    func testPreservesEmptyDirectories() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("cleanzip-empty-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("Project")
+        let emptyDir = project.appendingPathComponent("EmptyFolder")
+        let nestedEmpty = project.appendingPathComponent("Outer/Inner")   // 入れ子の空
+        let junkOnly = project.appendingPathComponent("JunkOnly")
+        for d in [emptyDir, nestedEmpty, junkOnly] {
+            try fm.createDirectory(at: d, withIntermediateDirectories: true)
+        }
+        try "hi".write(to: project.appendingPathComponent("keep.txt"), atomically: true, encoding: .utf8)
+        try "x".write(to: junkOnly.appendingPathComponent(".DS_Store"), atomically: true, encoding: .utf8)
+        defer { try? fm.removeItem(at: root) }
+
+        let out = root.appendingPathComponent("empty.zip")
+        defer { try? fm.removeItem(at: out) }
+        try CleanZip.make(items: [project], to: out)
+
+        let entries = try listZipEntries(out)
+        XCTAssertTrue(entries.contains("Project/keep.txt"), "実ファイル欠落: \(entries)")
+        // 空フォルダがディレクトリエントリとして残る（末尾スラッシュは helper が除去）
+        XCTAssertTrue(entries.contains("Project/EmptyFolder"), "空フォルダ欠落: \(entries)")
+        // 入れ子の空は最深部が残る（Outer は Inner により暗黙再現される）
+        XCTAssertTrue(entries.contains("Project/Outer/Inner"), "入れ子の空フォルダ欠落: \(entries)")
+        // ジャンクのみのフォルダも（中身を除いた上で）空として残る。ジャンク本体は入らない。
+        XCTAssertTrue(entries.contains("Project/JunkOnly"), "ジャンクのみフォルダ欠落: \(entries)")
+        for e in entries {
+            XCTAssertFalse(e.contains(".DS_Store"), "ジャンク混入: \(e)")
+            XCTAssertFalse(e.contains("__MACOSX"), "ジャンク混入: \(e)")
+        }
+    }
+
     // MARK: - helpers
 
     /// Project/keep.txt, Project/sub/inner.txt の実ファイルと、各所に撒いたジャンクから成るツリー

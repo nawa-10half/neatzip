@@ -106,8 +106,14 @@ public enum CleanZip {
         !ext.isEmpty && precompressedExtensions.contains(ext.lowercased())
     }
 
-    /// zip に書き込む1ファイル（列挙フェーズで確定）。size は進捗の総量計算用。
-    private struct PlanItem { let url: URL; let zipPath: String; let size: Int64 }
+    /// zip に書き込む1エントリ（列挙フェーズで確定）。size は進捗の総量計算用。
+    /// isDir=true は空ディレクトリエントリ（zipPath は "/" 終端・中身なし）。
+    private struct PlanItem {
+        let url: URL; let zipPath: String; let size: Int64; let isDir: Bool
+        init(url: URL, zipPath: String, size: Int64, isDir: Bool = false) {
+            self.url = url; self.zipPath = zipPath; self.size = size; self.isDir = isDir
+        }
+    }
 
     /// items をまとめて destination にクリーン ZIP 化。各トップレベル項目は
     /// 自身の名前で zip 内に入る（フォルダはそのまま展開される＝Finder の Compress と同じ形）。
@@ -201,24 +207,35 @@ public enum CleanZip {
         return uniqueURL(dir.appendingPathComponent(base).appendingPathExtension("zip"))
     }
 
-    /// dir 配下を再帰し、ジャンクを除いた *ファイル* だけを zipPrefix 付きでプランに積む。
-    /// 空ディレクトリと __MACOSX 等のジャンクディレクトリには潜らない（= 構造的にクリーン）。
+    /// dir 配下を再帰し、ジャンクを除いたファイルを zipPrefix 付きでプランに積む。
+    /// __MACOSX 等のジャンクディレクトリには潜らない（= 構造的にクリーン）。
+    /// 配下に何も無い（空 or ジャンクのみ）ディレクトリは構造を保つため明示エントリ（"prefix/"）を出す
+    /// ＝ Finder の Compress と同じく空フォルダを残す。中身のあるディレクトリはファイルのパスで暗黙に再現される。
+    /// 戻り値: このディレクトリがエントリを1つでも生んだか（親が空判定に使う）。
     /// enumerator の絶対パス切り出しは /var→/private/var（APFS firmlink）でズレるため使わない。
+    @discardableResult
     private static func collect(_ dir: URL, zipPrefix: String,
-                                into plan: inout [PlanItem], fm: FileManager) throws {
+                                into plan: inout [PlanItem], fm: FileManager) throws -> Bool {
         let children = try fm.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey], options: [])
+        var contributed = false
         for child in children {
             let name = child.lastPathComponent
             if isJunk(name) { continue }
             let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             let zipPath = zipPrefix + name
             if isDir {
-                try collect(child, zipPrefix: zipPath + "/", into: &plan, fm: fm)
+                if try collect(child, zipPrefix: zipPath + "/", into: &plan, fm: fm) { contributed = true }
             } else {
                 plan.append(PlanItem(url: child, zipPath: zipPath, size: fileSize(child, fm)))
+                contributed = true
             }
         }
+        if !contributed {
+            plan.append(PlanItem(url: dir, zipPath: zipPrefix, size: 0, isDir: true))
+            return true   // 空ディレクトリエントリを生んだ＝親にとっては「中身あり」
+        }
+        return contributed
     }
 
     // MARK: - エンジン（libdeflate 圧縮 → minizip raw write）
@@ -233,17 +250,26 @@ public enum CleanZip {
         let mtime: time_t
         let salt: [UInt8]          // AES のみ（並列導出）。それ以外は空
         let kbuf: [UInt8]          // AES のみ（[aes32|hmac32|verify2]）。それ以外は空
+        let isDir: Bool            // 空ディレクトリエントリ（暗号化せず dir 属性で書く）
         init(zipPath: String, method: Int32, payload: [UInt8], crc: UInt32,
-             usize: Int64, mtime: time_t, salt: [UInt8], kbuf: [UInt8]) {
+             usize: Int64, mtime: time_t, salt: [UInt8], kbuf: [UInt8], isDir: Bool = false) {
             self.zipPath = zipPath; self.method = method; self.payload = payload
             self.crc = crc; self.usize = usize; self.mtime = mtime
-            self.salt = salt; self.kbuf = kbuf
+            self.salt = salt; self.kbuf = kbuf; self.isDir = isDir
         }
     }
 
     /// 1ファイルを読み込み libdeflate で圧縮、必要なら AES 鍵をその場（並列phase）で導出する。
     /// 失敗時は nil（書き込みフェーズで .writeFailed を投げる）。
     private static func compressOne(_ item: PlanItem, options: CleanZipOptions) -> CompressedEntry? {
+        // 空ディレクトリエントリ: 中身なし・store・暗号化なし。
+        if item.isDir {
+            let mtime = (try? item.url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate.map { time_t($0.timeIntervalSince1970) } ?? time(nil)
+            return CompressedEntry(zipPath: item.zipPath, method: MZ_COMPRESS_METHOD_STORE,
+                                   payload: [], crc: 0, usize: 0, mtime: mtime,
+                                   salt: [], kbuf: [], isDir: true)
+        }
         guard let data = FileManager.default.contents(atPath: item.url.path) else { return nil }
         let input = [UInt8](data)
         let n = input.count
@@ -303,9 +329,11 @@ public enum CleanZip {
         fi.uncompressed_size = e.usize
         fi.compressed_size = Int64(e.payload.count)
         fi.crc = e.crc
-        fi.external_fa = UInt32(0o100644) << 16   // regular file rw-r--r--
+        // ディレクトリは unix mode(040755) + MS-DOS ディレクトリ属性(0x10)。ファイルは rw-r--r--。
+        fi.external_fa = e.isDir ? ((UInt32(0o040755) << 16) | 0x10) : (UInt32(0o100644) << 16)
 
-        let password = options.effectivePassword
+        // 空ディレクトリは中身が無いので暗号化しない。
+        let password = e.isDir ? nil : options.effectivePassword
         if password != nil {
             fi.flag |= UInt16(MZ_ZIP_FLAG_ENCRYPTED)
             if options.useAES {
