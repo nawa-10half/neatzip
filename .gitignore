@@ -18,3 +18,6 @@ Extension/NeatZipFinderExtension.entitlements
 # 動作確認の生成物（クリーンZIP の出力やテスト用フォルダ）
 *.zip
 /Test/
+
+# Serena MCP の作業用ディレクトリ（プロジェクト固有のキャッシュ）
+.serena/
