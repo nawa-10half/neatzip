@@ -36,6 +36,7 @@ public enum CleanZipError: LocalizedError {
     case openFailed(URL)
     case writeFailed(URL)
     case cancelled
+    case allUnreadable      // 入力はあったが、どのファイルも読めず1件も書けなかった
     public var errorDescription: String? {
         switch self {
         case .nothingToArchive:
@@ -48,7 +49,29 @@ public enum CleanZipError: LocalizedError {
                           u.lastPathComponent)
         case .cancelled:
             return NSLocalizedString("error.cancelled", bundle: .module, comment: "")
+        case .allUnreadable:
+            return NSLocalizedString("error.allUnreadable", bundle: .module, comment: "")
         }
+    }
+}
+
+/// 読めずにアーカイブから除外した1項目。`path` は zip 内パス（ユーザーが識別できる相対表現）、
+/// `reason` はローカライズ済みの理由。致命的でない失敗（個別ファイル/サブフォルダの読み込み不能）を
+/// 全体の中止ではなくスキップとして記録し、完了後にまとめて提示するための値。
+public struct SkippedItem {
+    public let path: String
+    public let reason: String
+    public init(path: String, reason: String) {
+        self.path = path
+        self.reason = reason
+    }
+}
+
+/// `make` の結果。`skipped` が空なら完全クリーン、非空なら一部を除外して完成したことを表す。
+public struct CleanZipResult {
+    public let skipped: [SkippedItem]
+    public init(skipped: [SkippedItem] = []) {
+        self.skipped = skipped
     }
 }
 
@@ -127,14 +150,18 @@ public enum CleanZip {
     /// 内部はファイル間並列で libdeflate 圧縮（CPU 律速をマルチコア化）し、その後 minizip の
     /// raw entry へ順次書き込む。進捗・キャンセルは書き込みフェーズのファイル境界で報告する
     /// （並列圧縮はコールバックを出さない＝従来と同じ「ファイル境界粒度・単調増加」を維持）。
+    @discardableResult
     public static func make(items: [URL],
                             to destination: URL,
                             options: CleanZipOptions = .init(),
                             progress: ((CleanZipProgress) -> Void)? = nil,
-                            isCancelled: (() -> Bool)? = nil) throws {
+                            isCancelled: (() -> Bool)? = nil) throws -> CleanZipResult {
         let fm = FileManager.default
         let inputs = items.filter { !isJunk($0.lastPathComponent) }
         guard !inputs.isEmpty else { throw CleanZipError.nothingToArchive }
+
+        // 致命的でない失敗（個別ファイル/サブフォルダの読み込み不能）はここに溜め、最後に返す。
+        var skipped: [SkippedItem] = []
 
         // 1) 列挙フェーズ: 1回のツリー走査でジャンクを除外し、書き込む順にプランを作る。
         var plan: [PlanItem] = []
@@ -142,7 +169,8 @@ public enum CleanZip {
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: item.path, isDirectory: &isDir) else { continue }
             if isDir.boolValue {
-                try collect(item, zipPrefix: item.lastPathComponent + "/", into: &plan, fm: fm)
+                collect(item, zipPrefix: item.lastPathComponent + "/",
+                        into: &plan, skipped: &skipped, fm: fm)
             } else {
                 plan.append(PlanItem(url: item, zipPath: item.lastPathComponent, size: fileSize(item, fm)))
             }
@@ -191,16 +219,27 @@ public enum CleanZip {
         }
 
         var doneBytes: Int64 = 0
+        var written = 0
         for (i, p) in plan.enumerated() {
             if isCancelled?() == true { throw CleanZipError.cancelled }
             progress?(CleanZipProgress(completedBytes: doneBytes, totalBytes: totalBytes,
                                        completedFiles: i, totalFiles: totalFiles, currentName: p.zipPath))
-            guard let entry = compressed[i] else { throw CleanZipError.writeFailed(p.url) }
-            try writeEntry(entry, to: zip, options: options)
-            doneBytes += p.size
+            // 圧縮フェーズで読めなかったファイル（compressed[i] == nil）は、全体を中止せず
+            // スキップして記録し続行する。minizip 自体の書き込み失敗だけは致命的（CD/オフセットが
+            // 壊れた zip を生むため）として throw する。
+            if let entry = compressed[i] {
+                try writeEntry(entry, to: zip, options: options)
+                written += 1
+            } else {
+                skipped.append(SkippedItem(path: p.zipPath, reason: unreadableReason))
+            }
+            doneBytes += p.size   // スキップ分も「処理済み」として進捗を進め、バーを単調に保つ
         }
-        progress?(CleanZipProgress(completedBytes: doneBytes, totalBytes: totalBytes,
+        // 入力はあったのに1件も書けなかった（全ファイル/全フォルダが読めなかった）→ 空 zip を成功扱いにしない。
+        if written == 0 && !skipped.isEmpty { throw CleanZipError.allUnreadable }
+        progress?(CleanZipProgress(completedBytes: totalBytes, totalBytes: totalBytes,
                                    completedFiles: totalFiles, totalFiles: totalFiles, currentName: ""))
+        return CleanZipResult(skipped: skipped)
     }
 
     /// 元の隣に "<name>.zip"（重複は連番）
@@ -219,11 +258,19 @@ public enum CleanZip {
     /// ＝ Finder の Compress と同じく空フォルダを残す。中身のあるディレクトリはファイルのパスで暗黙に再現される。
     /// 戻り値: このディレクトリがエントリを1つでも生んだか（親が空判定に使う）。
     /// enumerator の絶対パス切り出しは /var→/private/var（APFS firmlink）でズレるため使わない。
+    /// 列挙できないサブフォルダ（権限なし等）は全体を中止せず skipped に記録して飛ばす。
     @discardableResult
     private static func collect(_ dir: URL, zipPrefix: String,
-                                into plan: inout [PlanItem], fm: FileManager) throws -> Bool {
-        let children = try fm.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey], options: [])
+                                into plan: inout [PlanItem],
+                                skipped: inout [SkippedItem], fm: FileManager) -> Bool {
+        let children: [URL]
+        do {
+            children = try fm.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey], options: [])
+        } catch {
+            skipped.append(SkippedItem(path: zipPrefix, reason: unreadableReason))
+            return false   // 読めなかった＝中身を一切再現できない（空フォルダ扱いにもしない）
+        }
         var contributed = false
         for child in children {
             let name = child.lastPathComponent
@@ -231,7 +278,9 @@ public enum CleanZip {
             let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             let zipPath = zipPrefix + name
             if isDir {
-                if try collect(child, zipPrefix: zipPath + "/", into: &plan, fm: fm) { contributed = true }
+                if collect(child, zipPrefix: zipPath + "/", into: &plan, skipped: &skipped, fm: fm) {
+                    contributed = true
+                }
             } else {
                 plan.append(PlanItem(url: child, zipPath: zipPath, size: fileSize(child, fm)))
                 contributed = true
@@ -242,6 +291,11 @@ public enum CleanZip {
             return true   // 空ディレクトリエントリを生んだ＝親にとっては「中身あり」
         }
         return contributed
+    }
+
+    /// スキップ理由（読み込み不能）のローカライズ文字列。collect / 書き込みループで共用。
+    private static var unreadableReason: String {
+        NSLocalizedString("skip.unreadable", bundle: .module, comment: "")
     }
 
     // MARK: - エンジン（libdeflate 圧縮 → minizip raw write）

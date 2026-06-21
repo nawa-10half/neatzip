@@ -3,3 +3,7 @@
 "error.openFailed" = "Could not create the archive: %@";
 "error.writeFailed" = "Failed to write the file: %@";
 "error.cancelled" = "Cancelled.";
+"error.allUnreadable" = "None of the files could be read, so no archive was created.";
+
+/* Reason shown for an item excluded because it could not be read */
+"skip.unreadable" = "Could not be read";

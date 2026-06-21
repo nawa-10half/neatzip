@@ -249,6 +249,60 @@ final class CleanZipTests: XCTestCase {
         }
     }
 
+    // MARK: - エラー処理: 読めないファイルはスキップして残りを固め、一覧を返す
+
+    func testSkipsUnreadableFileAndReportsIt() throws {
+        try XCTSkipIf(getuid() == 0, "root はパーミッションを無視するため読み込み不能を再現できない")
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("cleanzip-skip-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("Project")
+        try fm.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let good = project.appendingPathComponent("good.txt")
+        let bad = project.appendingPathComponent("bad.bin")
+        try "hello".write(to: good, atomically: true, encoding: .utf8)
+        try "secret".write(to: bad, atomically: true, encoding: .utf8)
+        XCTAssertEqual(chmod(bad.path, 0), 0, "chmod 000 に失敗")
+        defer { _ = chmod(bad.path, 0o644) }   // 後片付けのため読めるよう戻す
+
+        let out = root.appendingPathComponent("skip.zip")
+        let result = try CleanZip.make(items: [project], to: out)
+
+        // 読めない bad.bin は除外され、zip 内パスと理由付きで報告される
+        XCTAssertEqual(result.skipped.count, 1, "除外は1件のはず: \(result.skipped)")
+        XCTAssertEqual(result.skipped.first?.path, "Project/bad.bin")
+        XCTAssertFalse(result.skipped.first?.reason.isEmpty ?? true, "理由が空であってはならない")
+
+        // 残りの good.txt はちゃんと入り、読めない bad.bin は入っていない
+        let entries = try listZipEntries(out)
+        XCTAssertTrue(entries.contains("Project/good.txt"), "実ファイル欠落: \(entries)")
+        XCTAssertFalse(entries.contains("Project/bad.bin"), "読めないはずのファイルが入っている: \(entries)")
+    }
+
+    func testAllUnreadableThrows() throws {
+        try XCTSkipIf(getuid() == 0, "root はパーミッションを無視するため読み込み不能を再現できない")
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("cleanzip-allbad-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("Project")
+        try fm.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let bad = project.appendingPathComponent("bad.bin")
+        try "secret".write(to: bad, atomically: true, encoding: .utf8)
+        XCTAssertEqual(chmod(bad.path, 0), 0, "chmod 000 に失敗")
+        defer { _ = chmod(bad.path, 0o644) }
+
+        // 1件も書けなければ空 zip を成功扱いにせず .allUnreadable を投げる
+        let out = root.appendingPathComponent("allbad.zip")
+        defer { try? fm.removeItem(at: out) }
+        XCTAssertThrowsError(try CleanZip.make(items: [project], to: out)) { error in
+            guard case CleanZipError.allUnreadable = error else {
+                return XCTFail("allUnreadable が投げられるべき: \(error)")
+            }
+        }
+    }
+
     // MARK: - helpers
 
     /// Project/keep.txt, Project/sub/inner.txt の実ファイルと、各所に撒いたジャンクから成るツリー

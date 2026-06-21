@@ -17,6 +17,11 @@
 "common.cancel" = "キャンセル";
 "common.choose" = "選択";
 
+/* 結果: 作成できたが、読めなかったファイルを除外した場合 */
+"partial.title" = "ZIPを作成しました（一部を除外）";
+"partial.body" = "%d 個のファイルを読み込めなかったため除外しました：";
+"partial.more" = "ほか %d 件";
+
 /* 暗号化 */
 "enc.none" = "なし（暗号化しない）";
 "enc.zipcrypto.long" = "標準（ZipCrypto・互換重視）";

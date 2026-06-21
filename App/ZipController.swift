@@ -128,7 +128,7 @@ final class ZipController {
 
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                try CleanZip.make(
+                let result = try CleanZip.make(
                     items: items, to: dest, options: options,
                     progress: { p in
                         let now = DispatchTime.now().uptimeNanoseconds
@@ -141,6 +141,8 @@ final class ZipController {
                 DispatchQueue.main.async {
                     finished = true
                     pc.finish()
+                    // 読めず除外したファイルがあれば、Finder 表示の前にまとめて知らせる。
+                    if !result.skipped.isEmpty { self.reportSkipped(result.skipped) }
                     NSWorkspace.shared.activateFileViewerSelecting([dest])
                     conclude()
                 }
@@ -155,10 +157,27 @@ final class ZipController {
                 DispatchQueue.main.async {
                     finished = true
                     pc.finish()
+                    // 致命的エラーでも途中まで書いた壊れた zip を残さない。
+                    try? FileManager.default.removeItem(at: dest)
                     NSAlert(error: error).runModal()
                     conclude()
                 }
             }
         }
+    }
+
+    /// 読み込めず除外したファイルを1枚のアラートにまとめて提示する（先頭 maxShown 件＋「ほか N 件」）。
+    private func reportSkipped(_ skipped: [SkippedItem]) {
+        let maxShown = 10
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "partial.title")
+        var body = String(format: String(localized: "partial.body"), skipped.count)
+        body += "\n\n" + skipped.prefix(maxShown).map { "• \($0.path)" }.joined(separator: "\n")
+        if skipped.count > maxShown {
+            body += "\n" + String(format: String(localized: "partial.more"), skipped.count - maxShown)
+        }
+        alert.informativeText = body
+        alert.runModal()   // ボタン未追加なら system 既定の「OK」が出る
     }
 }

@@ -3,3 +3,7 @@
 "error.openFailed" = "アーカイブを作成できませんでした: %@";
 "error.writeFailed" = "ファイルの書き込みに失敗しました: %@";
 "error.cancelled" = "キャンセルされました。";
+"error.allUnreadable" = "すべてのファイルを読み込めなかったため、アーカイブを作成できませんでした。";
+
+/* 読めずに除外した項目の理由 */
+"skip.unreadable" = "読み込めませんでした";

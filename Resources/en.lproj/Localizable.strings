@@ -17,6 +17,11 @@
 "common.cancel" = "Cancel";
 "common.choose" = "Choose";
 
+/* Result: created, but some files were excluded because they couldn't be read */
+"partial.title" = "ZIP created (some items excluded)";
+"partial.body" = "%d file(s) could not be read and were excluded:";
+"partial.more" = "…and %d more";
+
 /* Encryption */
 "enc.none" = "None (no encryption)";
 "enc.zipcrypto.long" = "Standard (ZipCrypto, compatible)";
