@@ -1,5 +1,7 @@
 import Foundation
-import ZipArchive   // SSZipArchive — SwiftPM: https://github.com/ZipArchive/ZipArchive
+import CommonCrypto      // PBKDF2（AES 鍵導出を並列phaseで実施）
+import Clibdeflate       // libdeflate 1.25: raw deflate 圧縮 + crc32
+import Cminizip          // minizip-ng 4.2.1 + NeatZip パッチ: zip コンテナ + AES/PKCrypt
 
 public enum ZipEncryption {
     case none
@@ -110,9 +112,9 @@ public enum CleanZip {
     /// items をまとめて destination にクリーン ZIP 化。各トップレベル項目は
     /// 自身の名前で zip 内に入る（フォルダはそのまま展開される＝Finder の Compress と同じ形）。
     ///
-    /// 進捗とキャンセルは任意。先に対象ファイルを列挙して総量を確定し、ファイル境界ごとに
-    /// `progress` を呼ぶ（SSZipArchive はファイル内途中経過を出せないため境界粒度）。
-    /// `isCancelled` が true を返すと各ファイルの前で `CleanZipError.cancelled` を投げる。
+    /// 内部はファイル間並列で libdeflate 圧縮（CPU 律速をマルチコア化）し、その後 minizip の
+    /// raw entry へ順次書き込む。進捗・キャンセルは書き込みフェーズのファイル境界で報告する
+    /// （並列圧縮はコールバックを出さない＝従来と同じ「ファイル境界粒度・単調増加」を維持）。
     public static func make(items: [URL],
                             to destination: URL,
                             options: CleanZipOptions = .init(),
@@ -123,7 +125,6 @@ public enum CleanZip {
         guard !inputs.isEmpty else { throw CleanZipError.nothingToArchive }
 
         // 1) 列挙フェーズ: 1回のツリー走査でジャンクを除外し、書き込む順にプランを作る。
-        //    firmlink 差を避けるため zip 内パスはトップ項目名を起点に自前で組み立てる。
         var plan: [PlanItem] = []
         for item in inputs {
             var isDir: ObjCBool = false
@@ -138,17 +139,52 @@ public enum CleanZip {
         let totalBytes = plan.reduce(Int64(0)) { $0 + $1.size }
         let totalFiles = plan.count
 
-        // 2) 書き込みフェーズ
-        let archive = SSZipArchive(path: destination.path)
-        guard archive.open() else { throw CleanZipError.openFailed(destination) }
-        defer { archive.close() }
+        if isCancelled?() == true { throw CleanZipError.cancelled }
+
+        // 2) 圧縮フェーズ（ファイル間並列・コールバック無し）
+        //    各 distinct インデックスへの書き込みなので withUnsafeMutableBufferPointer で安全に並列化。
+        var compressed = [CompressedEntry?](repeating: nil, count: totalFiles)
+        if totalFiles > 0 {
+            compressed.withUnsafeMutableBufferPointer { buf in
+                DispatchQueue.concurrentPerform(iterations: totalFiles) { i in
+                    buf[i] = compressOne(plan[i], options: options)
+                }
+            }
+        }
+
+        // 3) 書き込みフェーズ（順次 raw write・進捗とキャンセルはここで）
+        var streamVar: UnsafeMutableRawPointer? = mz_stream_os_create()
+        guard streamVar != nil else { throw CleanZipError.openFailed(destination) }
+        let stream = streamVar!
+        guard mz_stream_os_open(stream, destination.path, MZ_OPEN_MODE_WRITE | MZ_OPEN_MODE_CREATE) == MZ_OK else {
+            mz_stream_os_delete(&streamVar)
+            throw CleanZipError.openFailed(destination)
+        }
+        var zipVar: UnsafeMutableRawPointer? = mz_zip_create()
+        guard zipVar != nil else {
+            mz_stream_os_close(stream); mz_stream_os_delete(&streamVar)
+            throw CleanZipError.openFailed(destination)
+        }
+        let zip = zipVar!
+        guard mz_zip_open(zip, stream, MZ_OPEN_MODE_WRITE) == MZ_OK else {
+            mz_zip_delete(&zipVar); mz_stream_os_close(stream); mz_stream_os_delete(&streamVar)
+            throw CleanZipError.openFailed(destination)
+        }
+        // 途中 throw（キャンセル等）でも CD を閉じて解放する。部分 zip の削除は呼び出し側責務。
+        defer {
+            mz_zip_close(zip)
+            mz_zip_delete(&zipVar)
+            mz_stream_os_close(stream)
+            mz_stream_os_delete(&streamVar)
+        }
 
         var doneBytes: Int64 = 0
         for (i, p) in plan.enumerated() {
             if isCancelled?() == true { throw CleanZipError.cancelled }
             progress?(CleanZipProgress(completedBytes: doneBytes, totalBytes: totalBytes,
                                        completedFiles: i, totalFiles: totalFiles, currentName: p.zipPath))
-            try writeFile(p, to: archive, options: options)
+            guard let entry = compressed[i] else { throw CleanZipError.writeFailed(p.url) }
+            try writeEntry(entry, to: zip, options: options)
             doneBytes += p.size
         }
         progress?(CleanZipProgress(completedBytes: doneBytes, totalBytes: totalBytes,
@@ -185,17 +221,119 @@ public enum CleanZip {
         }
     }
 
-    private static func writeFile(_ item: PlanItem, to archive: SSZipArchive,
-                                  options: CleanZipOptions) throws {
-        // smart-store: 圧縮済み拡張子は DEFLATE を飛ばして store(0)。それ以外は指定レベル。
-        let level = (options.smartStore && isPrecompressed(item.url.pathExtension))
-            ? 0 : options.compressionLevel
-        let ok = archive.writeFile(atPath: item.url.path,
-                                   withFileName: item.zipPath,
-                                   compressionLevel: level,
-                                   password: options.effectivePassword,
-                                   aes: options.useAES)
-        if !ok { throw CleanZipError.writeFailed(item.url) }
+    // MARK: - エンジン（libdeflate 圧縮 → minizip raw write）
+
+    /// 圧縮済み1エントリ。書き込みフェーズに渡す中間表現。
+    private final class CompressedEntry {
+        let zipPath: String
+        let method: Int32          // MZ_COMPRESS_METHOD_*
+        let payload: [UInt8]       // deflate 出力 or（store時）生バイト
+        let crc: UInt32
+        let usize: Int64           // 非圧縮サイズ
+        let mtime: time_t
+        let salt: [UInt8]          // AES のみ（並列導出）。それ以外は空
+        let kbuf: [UInt8]          // AES のみ（[aes32|hmac32|verify2]）。それ以外は空
+        init(zipPath: String, method: Int32, payload: [UInt8], crc: UInt32,
+             usize: Int64, mtime: time_t, salt: [UInt8], kbuf: [UInt8]) {
+            self.zipPath = zipPath; self.method = method; self.payload = payload
+            self.crc = crc; self.usize = usize; self.mtime = mtime
+            self.salt = salt; self.kbuf = kbuf
+        }
+    }
+
+    /// 1ファイルを読み込み libdeflate で圧縮、必要なら AES 鍵をその場（並列phase）で導出する。
+    /// 失敗時は nil（書き込みフェーズで .writeFailed を投げる）。
+    private static func compressOne(_ item: PlanItem, options: CleanZipOptions) -> CompressedEntry? {
+        guard let data = FileManager.default.contents(atPath: item.url.path) else { return nil }
+        let input = [UInt8](data)
+        let n = input.count
+
+        let crc: UInt32 = input.withUnsafeBytes { libdeflate_crc32(0, $0.baseAddress, n) }
+
+        // smart-store / レベル決定。0 = store。
+        let store = (options.smartStore && isPrecompressed(item.url.pathExtension))
+            || options.compressionLevel == 0 || n == 0
+        let level: Int32 = options.compressionLevel < 0 ? 6 : options.compressionLevel
+
+        var method = MZ_COMPRESS_METHOD_STORE
+        var payload = input
+        if !store, let comp = libdeflate_alloc_compressor(level) {
+            defer { libdeflate_free_compressor(comp) }
+            let bound = libdeflate_deflate_compress_bound(comp, n)
+            var out = [UInt8](repeating: 0, count: bound)
+            let clen = out.withUnsafeMutableBytes { dst in
+                input.withUnsafeBytes { src in
+                    libdeflate_deflate_compress(comp, src.baseAddress, n, dst.baseAddress, bound)
+                }
+            }
+            if clen > 0 && clen < n {
+                out.removeLast(bound - clen)
+                method = MZ_COMPRESS_METHOD_DEFLATE
+                payload = out
+            }
+        }
+
+        // AES: salt 生成 + PBKDF2 鍵導出を並列phaseで（逐次 write の高コストを排する）
+        var salt = [UInt8](); var kbuf = [UInt8]()
+        if options.useAES, let pw = options.effectivePassword {
+            salt = [UInt8](repeating: 0, count: 16)
+            arc4random_buf(&salt, 16)
+            kbuf = [UInt8](repeating: 0, count: 66)   // [aes_key32 | hmac_key32 | verify2]
+            _ = pw.withCString { pwPtr in
+                CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), pwPtr, strlen(pwPtr),
+                                     salt, 16, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1),
+                                     1000, &kbuf, 66)
+            }
+        }
+
+        let mtime = (try? item.url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate.map { time_t($0.timeIntervalSince1970) } ?? time(nil)
+        return CompressedEntry(zipPath: item.zipPath, method: method, payload: payload,
+                               crc: crc, usize: Int64(n), mtime: mtime, salt: salt, kbuf: kbuf)
+    }
+
+    /// 圧縮済みエントリを minizip の raw entry として書き込む。
+    private static func writeEntry(_ e: CompressedEntry, to zip: UnsafeMutableRawPointer,
+                                   options: CleanZipOptions) throws {
+        var fi = mz_zip_file()
+        fi.version_madeby = UInt16(MZ_HOST_SYSTEM_UNIX) << 8
+        fi.compression_method = UInt16(e.method)
+        fi.modified_date = e.mtime
+        fi.flag = UInt16(MZ_ZIP_FLAG_UTF8)
+        fi.uncompressed_size = e.usize
+        fi.compressed_size = Int64(e.payload.count)
+        fi.crc = e.crc
+        fi.external_fa = UInt32(0o100644) << 16   // regular file rw-r--r--
+
+        let password = options.effectivePassword
+        if password != nil {
+            fi.flag |= UInt16(MZ_ZIP_FLAG_ENCRYPTED)
+            if options.useAES {
+                fi.aes_version = UInt16(MZ_AES_VERSION)
+                fi.aes_strength = UInt8(MZ_AES_STRENGTH_256)
+                // 並列導出済みの鍵を注入 → このエントリの PBKDF2 を minizip がスキップ
+                mz_zip_set_aes_key(zip, e.salt, 16, e.kbuf, 66)
+            }
+        }
+
+        let level = Int16(options.compressionLevel < 0 ? 6 : max(0, options.compressionLevel))
+        let rc: Int32 = e.zipPath.withCString { namePtr -> Int32 in
+            fi.filename = namePtr
+            func withPwd<R>(_ body: (UnsafePointer<CChar>?) -> R) -> R {
+                if let p = password { return p.withCString { body($0) } } else { return body(nil) }
+            }
+            return withPwd { pwPtr in
+                if mz_zip_entry_write_open(zip, &fi, level, 1, pwPtr) != MZ_OK { return -1 }
+                if !e.payload.isEmpty {
+                    let w = e.payload.withUnsafeBytes {
+                        mz_zip_entry_write(zip, $0.baseAddress, Int32(e.payload.count))
+                    }
+                    if w < 0 { return -1 }
+                }
+                return mz_zip_entry_close_raw(zip, e.usize, e.crc)
+            }
+        }
+        if rc != MZ_OK { throw CleanZipError.writeFailed(URL(fileURLWithPath: e.zipPath)) }
     }
 
     private static func fileSize(_ url: URL, _ fm: FileManager) -> Int64 {

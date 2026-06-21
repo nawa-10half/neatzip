@@ -1,0 +1,9 @@
+module Cminizip {
+    header "../src/mz.h"
+    header "../src/mz_strm.h"
+    header "../src/mz_strm_os.h"
+    header "../src/mz_strm_mem.h"
+    header "../src/mz_zip.h"
+    header "../src/mz_strm_wzaes.h"
+    export *
+}

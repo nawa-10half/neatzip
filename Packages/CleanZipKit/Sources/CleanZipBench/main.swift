@@ -1,7 +1,7 @@
 import Foundation
 import CleanZipKit
 
-// SSZipArchive バックエンドの基準値計測（DESIGN.md §5 #7 / 性能チェックポイント）。
+// 新エンジン（libdeflate 並列 + minizip-ng raw write）の性能チェックポイント（DESIGN.md §5 #11）。
 //   swift run --package-path Packages/CleanZipKit -c release CleanZipBench
 
 func timeIt(_ body: () throws -> Void) rethrows -> Double {
@@ -80,7 +80,7 @@ func run(label: String, src: URL, info: (bytes: Int64, files: Int), options: Cle
     print("\(name) in=\(r(mb(info.bytes),1))MB files=\(info.files)  time=\(r(best,3))s  \(r(thr,1)) MB/s  out=\(r(mb(outB),1))MB (\(Int(ratio.rounded()))%)")
 }
 
-print("=== NeatZip / SSZipArchive(minizip-ng) baseline — \(ProcessInfo.processInfo.processorCount) cores ===")
+print("=== NeatZip / libdeflate並列 + minizip-ng raw write — \(ProcessInfo.processInfo.processorCount) cores ===")
 print("各行 best-of-2。level -1=default, 0=store。AES-256 はパスワード付き。\n")
 
 let small = buildManySmall();        let smallInfo = dirInfo(small)

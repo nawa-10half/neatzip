@@ -1,0 +1,4 @@
+module Clibdeflate {
+    header "../src/libdeflate.h"
+    export *
+}
