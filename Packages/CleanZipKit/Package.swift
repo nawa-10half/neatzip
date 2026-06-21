@@ -21,5 +21,9 @@ let package = Package(
             name: "CleanZipKitTests",
             dependencies: ["CleanZipKit"]
         ),
+        .executableTarget(
+            name: "CleanZipBench",
+            dependencies: ["CleanZipKit"]
+        ),
     ]
 )
