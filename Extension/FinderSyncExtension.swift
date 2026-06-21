@@ -19,7 +19,12 @@ final class FinderSyncExtension: FIFinderSync {
         guard menuKind == .contextualMenuForItems else { return menu }
         let item = NSMenuItem(title: "NeatZip でクリーンZIP…",
                               action: #selector(cleanZip(_:)), keyEquivalent: "")
-        if let icon = NSImage(named: "FinderMenuIcon") { item.image = icon }
+        let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+        if let icon = NSImage(systemSymbolName: "doc.zipper", accessibilityDescription: "クリーンZIP")?
+            .withSymbolConfiguration(cfg) {
+            icon.isTemplate = true
+            item.image = icon
+        }
         menu.addItem(item)
         return menu
     }

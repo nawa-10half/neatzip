@@ -31,6 +31,7 @@ targets:
     platform: macOS
     sources:
       - App
+      - Resources
     dependencies:
       - package: CleanZipKit
       - target: NeatZipFinderExtension   # appex を本体に embed（自動で Embed App Extensions フェーズ）
@@ -40,6 +41,7 @@ targets:
         PRODUCT_NAME: NeatZip
         ENABLE_APP_SANDBOX: NO            # 本体はサンドボックス OFF
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: App/Info.plist
       properties:
