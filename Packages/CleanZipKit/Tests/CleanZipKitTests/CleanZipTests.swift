@@ -69,6 +69,58 @@ final class CleanZipTests: XCTestCase {
                        "smartStore=false では .jpg も DEFLATE されるべき: \(methodsOff)")
     }
 
+    // MARK: - 進捗: バイト単調増加・最後に総量へ到達
+
+    func testProgressReportsMonotonicAndReachesTotal() throws {
+        let fm = FileManager.default
+        let root = try makeFixtureTree()
+        defer { try? fm.removeItem(at: root) }
+        let out = root.appendingPathComponent("prog.zip")
+        defer { try? fm.removeItem(at: out) }
+
+        var snaps: [CleanZipProgress] = []
+        try CleanZip.make(items: [root.appendingPathComponent("Project")], to: out,
+                          progress: { snaps.append($0) })
+
+        XCTAssertFalse(snaps.isEmpty, "進捗が1度も来ていない")
+        // ジャンクを除いた実ファイルは2つ（keep.txt, sub/inner.txt）。総バイトは hello+inner=10。
+        XCTAssertEqual(snaps.last?.totalFiles, 2)
+        XCTAssertEqual(snaps.last?.totalBytes, 10)
+        // 最後のスナップショットは完了状態（全件・全バイト・現在名は空）
+        XCTAssertEqual(snaps.last?.completedFiles, 2)
+        XCTAssertEqual(snaps.last?.completedBytes, snaps.last?.totalBytes)
+        XCTAssertEqual(snaps.last?.currentName, "")
+        XCTAssertEqual(snaps.last?.fraction, 1)
+        // バイト・件数とも単調非減少
+        for (a, b) in zip(snaps, snaps.dropFirst()) {
+            XCTAssertLessThanOrEqual(a.completedBytes, b.completedBytes)
+            XCTAssertLessThanOrEqual(a.completedFiles, b.completedFiles)
+        }
+    }
+
+    // MARK: - キャンセル: 途中で止まり .cancelled を投げる
+
+    func testCancellationStopsAndThrows() throws {
+        let fm = FileManager.default
+        let root = try makeFixtureTree()
+        defer { try? fm.removeItem(at: root) }
+        let out = root.appendingPathComponent("cancel.zip")
+        defer { try? fm.removeItem(at: out) }
+
+        var progressCalls = 0
+        XCTAssertThrowsError(
+            try CleanZip.make(items: [root.appendingPathComponent("Project")], to: out,
+                              progress: { _ in progressCalls += 1 },
+                              isCancelled: { progressCalls >= 1 })   // 1件進んだら以降キャンセル
+        ) { error in
+            guard case CleanZipError.cancelled = error else {
+                return XCTFail("cancelled が投げられるべき: \(error)")
+            }
+        }
+        // 2件あるうち2件目の手前で止まる（完了通知も来ない）
+        XCTAssertEqual(progressCalls, 1, "1件処理後にキャンセルされるべき")
+    }
+
     // MARK: - 統合: ジャンク混入ツリー → クリーン ZIP
 
     func testMakeExcludesJunk() throws {

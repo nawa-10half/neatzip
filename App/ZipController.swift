@@ -35,14 +35,47 @@ final class ZipController {
     }
 
     private func run(items: [URL], to dest: URL, options: CleanZipOptions) {
+        let pc = ProgressController()
+        var finished = false   // 遅延表示と完了の両方がメインスレッドで触る
+
+        // すぐ終わるジョブでウィンドウがちらつかないよう、少し待ってから出す。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            if !finished { pc.show() }
+        }
+
+        // UI 更新は ~30fps に間引く（大量小ファイルでメインキューを溢れさせない）。
+        var lastTick: UInt64 = 0
+        let throttleNs: UInt64 = 33_000_000
+
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                try CleanZip.make(items: items, to: dest, options: options)
+                try CleanZip.make(
+                    items: items, to: dest, options: options,
+                    progress: { p in
+                        let now = DispatchTime.now().uptimeNanoseconds
+                        let isFinal = p.completedFiles == p.totalFiles
+                        if !isFinal && now &- lastTick < throttleNs { return }
+                        lastTick = now
+                        DispatchQueue.main.async { pc.update(p) }
+                    },
+                    isCancelled: { pc.isCancelled })
                 DispatchQueue.main.async {
+                    finished = true
+                    pc.finish()
                     NSWorkspace.shared.activateFileViewerSelecting([dest])
                 }
+            } catch CleanZipError.cancelled {
+                DispatchQueue.main.async {
+                    finished = true
+                    pc.finish()
+                    try? FileManager.default.removeItem(at: dest)   // 途中まで書いた zip を掃除
+                }
             } catch {
-                DispatchQueue.main.async { NSAlert(error: error).runModal() }
+                DispatchQueue.main.async {
+                    finished = true
+                    pc.finish()
+                    NSAlert(error: error).runModal()
+                }
             }
         }
     }

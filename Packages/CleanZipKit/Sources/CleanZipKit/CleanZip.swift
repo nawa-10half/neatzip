@@ -33,12 +33,30 @@ public enum CleanZipError: LocalizedError {
     case nothingToArchive
     case openFailed(URL)
     case writeFailed(URL)
+    case cancelled
     public var errorDescription: String? {
         switch self {
         case .nothingToArchive:   return "圧縮対象がありません。"
         case .openFailed(let u):  return "アーカイブを作成できませんでした: \(u.lastPathComponent)"
         case .writeFailed(let u): return "ファイルの書き込みに失敗しました: \(u.lastPathComponent)"
+        case .cancelled:          return "キャンセルされました。"
         }
+    }
+}
+
+/// 書き込み進捗のスナップショット。`completedFiles`/`completedBytes` は
+/// 現在書き込み中のファイルを含まない（= 書き終えた分）。`currentName` は
+/// これから/書き込み中のファイルの zip 内パス（完了時は空）。
+public struct CleanZipProgress {
+    public let completedBytes: Int64
+    public let totalBytes: Int64
+    public let completedFiles: Int
+    public let totalFiles: Int
+    public let currentName: String
+
+    /// 0...1。総バイトが 0（空）なら 1 とみなす。
+    public var fraction: Double {
+        totalBytes > 0 ? Double(completedBytes) / Double(totalBytes) : 1
     }
 }
 
@@ -86,28 +104,55 @@ public enum CleanZip {
         !ext.isEmpty && precompressedExtensions.contains(ext.lowercased())
     }
 
+    /// zip に書き込む1ファイル（列挙フェーズで確定）。size は進捗の総量計算用。
+    private struct PlanItem { let url: URL; let zipPath: String; let size: Int64 }
+
     /// items をまとめて destination にクリーン ZIP 化。各トップレベル項目は
     /// 自身の名前で zip 内に入る（フォルダはそのまま展開される＝Finder の Compress と同じ形）。
+    ///
+    /// 進捗とキャンセルは任意。先に対象ファイルを列挙して総量を確定し、ファイル境界ごとに
+    /// `progress` を呼ぶ（SSZipArchive はファイル内途中経過を出せないため境界粒度）。
+    /// `isCancelled` が true を返すと各ファイルの前で `CleanZipError.cancelled` を投げる。
     public static func make(items: [URL],
                             to destination: URL,
-                            options: CleanZipOptions = .init()) throws {
+                            options: CleanZipOptions = .init(),
+                            progress: ((CleanZipProgress) -> Void)? = nil,
+                            isCancelled: (() -> Bool)? = nil) throws {
         let fm = FileManager.default
         let inputs = items.filter { !isJunk($0.lastPathComponent) }
         guard !inputs.isEmpty else { throw CleanZipError.nothingToArchive }
 
-        let archive = SSZipArchive(path: destination.path)
-        guard archive.open() else { throw CleanZipError.openFailed(destination) }
-        defer { archive.close() }
-
+        // 1) 列挙フェーズ: 1回のツリー走査でジャンクを除外し、書き込む順にプランを作る。
+        //    firmlink 差を避けるため zip 内パスはトップ項目名を起点に自前で組み立てる。
+        var plan: [PlanItem] = []
         for item in inputs {
             var isDir: ObjCBool = false
             guard fm.fileExists(atPath: item.path, isDirectory: &isDir) else { continue }
             if isDir.boolValue {
-                try addDirectory(item, to: archive, options: options, fm: fm)
+                try collect(item, zipPrefix: item.lastPathComponent + "/", into: &plan, fm: fm)
             } else {
-                try addFile(item, zipPath: item.lastPathComponent, to: archive, options: options)
+                plan.append(PlanItem(url: item, zipPath: item.lastPathComponent, size: fileSize(item, fm)))
             }
         }
+
+        let totalBytes = plan.reduce(Int64(0)) { $0 + $1.size }
+        let totalFiles = plan.count
+
+        // 2) 書き込みフェーズ
+        let archive = SSZipArchive(path: destination.path)
+        guard archive.open() else { throw CleanZipError.openFailed(destination) }
+        defer { archive.close() }
+
+        var doneBytes: Int64 = 0
+        for (i, p) in plan.enumerated() {
+            if isCancelled?() == true { throw CleanZipError.cancelled }
+            progress?(CleanZipProgress(completedBytes: doneBytes, totalBytes: totalBytes,
+                                       completedFiles: i, totalFiles: totalFiles, currentName: p.zipPath))
+            try writeFile(p, to: archive, options: options)
+            doneBytes += p.size
+        }
+        progress?(CleanZipProgress(completedBytes: doneBytes, totalBytes: totalBytes,
+                                   completedFiles: totalFiles, totalFiles: totalFiles, currentName: ""))
     }
 
     /// 元の隣に "<name>.zip"（重複は連番）
@@ -120,44 +165,41 @@ public enum CleanZip {
         return uniqueURL(dir.appendingPathComponent(base).appendingPathExtension("zip"))
     }
 
-    private static func addDirectory(_ dir: URL, to archive: SSZipArchive,
-                                     options: CleanZipOptions, fm: FileManager) throws {
-        // zip 内パスはトップ項目名を起点に「自前で組み立てる」。enumerator の絶対パス
-        // 文字列を切り出す方式は /var→/private/var（APFS firmlink）の解決差でズレるため使わない。
-        try addTree(dir, zipPrefix: dir.lastPathComponent + "/",
-                    to: archive, options: options, fm: fm)
-    }
-
-    /// dir 配下を再帰し、ジャンクを除いた *ファイル* だけを zipPrefix 付きで追加する。
+    /// dir 配下を再帰し、ジャンクを除いた *ファイル* だけを zipPrefix 付きでプランに積む。
     /// 空ディレクトリと __MACOSX 等のジャンクディレクトリには潜らない（= 構造的にクリーン）。
-    private static func addTree(_ dir: URL, zipPrefix: String, to archive: SSZipArchive,
-                                options: CleanZipOptions, fm: FileManager) throws {
+    /// enumerator の絶対パス切り出しは /var→/private/var（APFS firmlink）でズレるため使わない。
+    private static func collect(_ dir: URL, zipPrefix: String,
+                                into plan: inout [PlanItem], fm: FileManager) throws {
         let children = try fm.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [])
+            at: dir, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey], options: [])
         for child in children {
             let name = child.lastPathComponent
             if isJunk(name) { continue }
             let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             let zipPath = zipPrefix + name
             if isDir {
-                try addTree(child, zipPrefix: zipPath + "/", to: archive, options: options, fm: fm)
+                try collect(child, zipPrefix: zipPath + "/", into: &plan, fm: fm)
             } else {
-                try addFile(child, zipPath: zipPath, to: archive, options: options)
+                plan.append(PlanItem(url: child, zipPath: zipPath, size: fileSize(child, fm)))
             }
         }
     }
 
-    private static func addFile(_ url: URL, zipPath: String,
-                                to archive: SSZipArchive, options: CleanZipOptions) throws {
+    private static func writeFile(_ item: PlanItem, to archive: SSZipArchive,
+                                  options: CleanZipOptions) throws {
         // smart-store: 圧縮済み拡張子は DEFLATE を飛ばして store(0)。それ以外は指定レベル。
-        let level = (options.smartStore && isPrecompressed(url.pathExtension))
+        let level = (options.smartStore && isPrecompressed(item.url.pathExtension))
             ? 0 : options.compressionLevel
-        let ok = archive.writeFile(atPath: url.path,
-                                   withFileName: zipPath,
+        let ok = archive.writeFile(atPath: item.url.path,
+                                   withFileName: item.zipPath,
                                    compressionLevel: level,
                                    password: options.effectivePassword,
                                    aes: options.useAES)
-        if !ok { throw CleanZipError.writeFailed(url) }
+        if !ok { throw CleanZipError.writeFailed(item.url) }
+    }
+
+    private static func fileSize(_ url: URL, _ fm: FileManager) -> Int64 {
+        Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
     }
 
     private static func uniqueURL(_ url: URL) -> URL {
