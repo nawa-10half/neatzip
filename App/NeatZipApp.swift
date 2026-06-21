@@ -15,13 +15,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Finder 拡張（独自スキーム neatzip://）/ "このアプリで開く"（file URL）から対象を受信
     func application(_ application: NSApplication, open urls: [URL]) {
         handledOpen = true
+        // Finder 右クリック（neatzip:// handoff）で起動した場合は一回限りのヘルパーとして
+        // 完了後に終了する。"このアプリで開く"（file URL）やドロップ窓の対話利用では終了しない。
+        let fromHandoff = urls.contains { $0.scheme == "neatzip" }
         let items = urls.flatMap { url -> [URL] in
             if url.isFileURL { return [url] }                       // "このアプリで開く" / ドロップ経由
             if url.scheme == "neatzip" { return Self.itemURLs(from: url) }  // Finder 拡張の handoff
             return []
         }
-        guard !items.isEmpty else { return }
-        DispatchQueue.main.async { ZipController.shared.begin(with: items) }
+        guard !items.isEmpty else {
+            if fromHandoff { NSApp.terminate(nil) }
+            return
+        }
+        DispatchQueue.main.async { ZipController.shared.begin(with: items, quitWhenDone: fromHandoff) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
