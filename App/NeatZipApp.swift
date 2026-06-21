@@ -6,6 +6,7 @@ struct NeatZipApp: App {
     var body: some Scene {
         WindowGroup { DropView() }
             .windowResizability(.contentSize)
+        Settings { SettingsView() }   // ⌘, ＝既定の暗号化/圧縮/出力先（DESIGN §14）
     }
 }
 
@@ -67,8 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// ドロップ窓かどうか。本体の補助 UI（進捗パネル・各種ダイアログ）はすべて NSPanel なので、
     /// それ以外＝ドロップ窓とみなす。
-    /// 注意: 将来 NSPanel でないウィンドウ（例: DESIGN §14 の設定ウィンドウ）を足すと、
-    /// この判定に巻き込まれ handoff 時に伏せられてしまう。その時はここで明示的に除外すること。
+    /// 設定ウィンドウ（Settings シーン・⌘,）は NSPanel ではないがこの判定に巻き込まれない:
+    /// 表示制御は起動時のみ（observer は 0.5s 後に解除）で、設定窓はユーザーが起動後に開くため
+    /// その時点では存在しない。handoff は設定を開く前に終了する。将来 launch 直後に出る非NSPanel
+    /// ウィンドウを足す場合はここで明示除外すること。
     private func isDropWindow(_ w: NSWindow) -> Bool { !(w is NSPanel) }
 
     /// 補助 UI（NSPanel）を除いた、本体のドロップ窓群。
