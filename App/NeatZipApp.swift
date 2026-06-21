@@ -59,19 +59,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// handoff 中に SwiftUI がドロップ窓を出してきたら即伏せる。進捗パネルやダイアログ
     /// （いずれも NSPanel）には触れない。
     @objc private func windowDidBecomeKey(_ note: Notification) {
-        guard isHandoff, let w = note.object as? NSWindow, !(w is NSPanel) else { return }
-        w.alphaValue = 0
-        w.orderOut(nil)
+        guard isHandoff, let w = note.object as? NSWindow, isDropWindow(w) else { return }
+        hide(w)
     }
 
     // MARK: - ドロップ窓（SwiftUI WindowGroup のウィンドウ）の表示制御
 
-    /// 進捗パネル等（NSPanel）を除いた、本体のウィンドウ群。
-    private func dropWindows() -> [NSWindow] { NSApp.windows.filter { !($0 is NSPanel) } }
+    /// ドロップ窓かどうか。本体の補助 UI（進捗パネル・各種ダイアログ）はすべて NSPanel なので、
+    /// それ以外＝ドロップ窓とみなす。
+    /// 注意: 将来 NSPanel でないウィンドウ（例: DESIGN §14 の設定ウィンドウ）を足すと、
+    /// この判定に巻き込まれ handoff 時に伏せられてしまう。その時はここで明示的に除外すること。
+    private func isDropWindow(_ w: NSWindow) -> Bool { !(w is NSPanel) }
 
-    private func hideDropWindows() {
-        for w in dropWindows() { w.alphaValue = 0; w.orderOut(nil) }
-    }
+    /// 補助 UI（NSPanel）を除いた、本体のドロップ窓群。
+    private func dropWindows() -> [NSWindow] { NSApp.windows.filter { isDropWindow($0) } }
+
+    private func hide(_ w: NSWindow) { w.alphaValue = 0; w.orderOut(nil) }
+
+    private func hideDropWindows() { for w in dropWindows() { hide(w) } }
 
     private func showDropWindows() {
         let ws = dropWindows()
