@@ -14,3 +14,7 @@ xcuserdata/
 App/Info.plist
 Extension/Info.plist
 Extension/NeatZipFinderExtension.entitlements
+
+# 動作確認の生成物（クリーンZIP の出力やテスト用フォルダ）
+*.zip
+/Test/

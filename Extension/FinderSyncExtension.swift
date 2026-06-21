@@ -27,14 +27,17 @@ final class FinderSyncExtension: FIFinderSync {
     @objc private func cleanZip(_ sender: AnyObject?) {
         guard let urls = FIFinderSyncController.default().selectedItemURLs(),
               !urls.isEmpty else { return }
-        // 本体 = .../NeatZip.app/Contents/PlugIns/Ext.appex → 3 階層上
-        let host = Bundle.main.bundleURL
-            .deletingLastPathComponent()   // PlugIns
-            .deletingLastPathComponent()   // Contents
-            .deletingLastPathComponent()   // .app
+        // サンドボックス拡張は Finder 選択 file URL のアクセス権を本体へ移譲できない。
+        // よって選択パスを独自スキーム neatzip:// に積んで本体（非サンドボックス）へ渡し、
+        // 本体が自前でファイルを読む。URL を開くだけなのでサンドボックスで許可される。
+        var comps = URLComponents()
+        comps.scheme = "neatzip"
+        comps.host = "zip"
+        comps.queryItems = urls.map { URLQueryItem(name: "p", value: $0.path) }
+        guard let url = comps.url else { return }
         let cfg = NSWorkspace.OpenConfiguration()
         cfg.activates = true
-        NSWorkspace.shared.open(urls, withApplicationAt: host, configuration: cfg) { _, error in
+        NSWorkspace.shared.open(url, configuration: cfg) { _, error in
             if let error { NSLog("NeatZip handoff failed: \(error)") }
         }
     }

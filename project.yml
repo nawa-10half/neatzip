@@ -51,6 +51,21 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: ""
+        # Finder 拡張からの handoff（NSWorkspace.open(urls, withApplicationAt:)）を
+        # LaunchServices に許可させるため、任意のファイル/フォルダを開けると宣言する。
+        # public.item は全ファイル・フォルダの基底 UTI。Alternate ランクで既定ハンドラにはしない。
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "ファイル / フォルダ"
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.item
+        # 拡張からの handoff は file URL ではなく独自スキーム neatzip:// でパスを渡す
+        # （サンドボックス拡張は Finder 選択 file URL のアクセス権を本体へ移譲できないため）。
+        CFBundleURLTypes:
+          - CFBundleURLName: app.neatzip.NeatZip
+            CFBundleURLSchemes:
+              - neatzip
 
   # ── Finder Sync 拡張: サンドボックス必須（§4/§9）。役割は handoff のみ ──
   NeatZipFinderExtension:
