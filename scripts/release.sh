@@ -49,6 +49,7 @@ xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$SCHEME" -configuration Relea
   CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES \
   ENABLE_HARDENED_RUNTIME=YES OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime" \
   ENABLE_DEBUG_DYLIB=NO PROVISIONING_PROFILE_SPECIFIER="" \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   build >/dev/null
 [[ -d "$APP" ]] || die "ビルド成果物が見つかりません: $APP"
 
@@ -79,10 +80,16 @@ fi
 
 # ── 公証 + ステープル ──────────────────────────────────────────────────────
 print -r -- "▸ 公証を申請（notarytool・完了まで待機）..."
-xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait \
-  || die "公証に失敗。詳細: xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"
+# 注意: notarytool submit --wait は status が Invalid でも exit 0 を返すため、出力で判定する。
+SUBMIT_OUT="$(xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1)"
+print -r -- "$SUBMIT_OUT"
+SUB_ID="$(print -r -- "$SUBMIT_OUT" | awk '/id:/{print $2; exit}')"
+if ! print -r -- "$SUBMIT_OUT" | grep -q "status: Accepted"; then
+  [[ -n "$SUB_ID" ]] && xcrun notarytool log "$SUB_ID" --keychain-profile "$NOTARY_PROFILE" 2>&1 | head -40
+  die "公証が通りませんでした（上記ログの issues を修正）"
+fi
 print -r -- "▸ ステープル..."
-xcrun stapler staple "$DMG"
+xcrun stapler staple "$DMG" || die "ステープル失敗"
 
 # ── 最終検証（Gatekeeper 評価）─────────────────────────────────────────────
 print -r -- "▸ Gatekeeper 評価..."
