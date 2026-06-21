@@ -20,6 +20,55 @@ final class CleanZipTests: XCTestCase {
         }
     }
 
+    // MARK: - smart-store: 圧縮済み拡張子の判定ユニット
+
+    func testIsPrecompressedRecognizesCompressedFormats() {
+        for ext in ["jpg", "JPG", "Png", "mp4", "mov", "mp3", "zip", "gz",
+                    "7z", "docx", "xlsx", "pptx", "epub", "apk", "woff2"] {
+            XCTAssertTrue(CleanZip.isPrecompressed(ext), "\(ext) は圧縮済み判定されるべき")
+        }
+    }
+
+    func testIsPrecompressedKeepsCompressibleFormats() {
+        // pdf は意図的に除外（無圧縮ストリーム個体があるため）。txt/csv/bmp/tiff/wav 等も DEFLATE 対象。
+        for ext in ["txt", "csv", "json", "xml", "html", "svg", "pdf",
+                    "bmp", "tiff", "wav", "doc", "", "log"] {
+            XCTAssertFalse(CleanZip.isPrecompressed(ext), "\(ext) は DEFLATE 対象（store しない）であるべき")
+        }
+    }
+
+    // MARK: - smart-store: 圧縮済み拡張子は store・通常ファイルは DEFLATE される
+
+    func testSmartStoreStoresPrecompressedExtensions() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("cleanzip-smart-\(UUID().uuidString)")
+        let project = root.appendingPathComponent("Project")
+        try fm.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        // どちらも「圧縮可能」な中身。拡張子だけが判定を分ける。
+        let compressible = String(repeating: "NeatZip smart-store test payload. ", count: 4096)
+        try compressible.write(to: project.appendingPathComponent("photo.jpg"), atomically: true, encoding: .utf8)
+        try compressible.write(to: project.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+
+        // 既定（smartStore = true）
+        let out = root.appendingPathComponent("smart.zip")
+        try CleanZip.make(items: [project], to: out)
+        let methods = try zipMethods(out)
+        XCTAssertEqual(methods["Project/photo.jpg"], "Stored",
+                       "圧縮済み拡張子(.jpg)は store されるべき: \(methods)")
+        XCTAssertEqual(methods["Project/notes.txt"]?.hasPrefix("Defl"), true,
+                       "通常ファイル(.txt)は DEFLATE されるべき: \(methods)")
+
+        // smartStore = false なら .jpg も DEFLATE される（= 機能が効いている裏取り）
+        let outOff = root.appendingPathComponent("plainlevel.zip")
+        try CleanZip.make(items: [project], to: outOff,
+                          options: CleanZipOptions(smartStore: false))
+        let methodsOff = try zipMethods(outOff)
+        XCTAssertEqual(methodsOff["Project/photo.jpg"]?.hasPrefix("Defl"), true,
+                       "smartStore=false では .jpg も DEFLATE されるべき: \(methodsOff)")
+    }
+
     // MARK: - 統合: ジャンク混入ツリー → クリーン ZIP
 
     func testMakeExcludesJunk() throws {
@@ -145,6 +194,20 @@ final class CleanZipTests: XCTestCase {
         return res.output.split(separator: "\n").map(String.init)
             .map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
             .filter { !$0.isEmpty }
+    }
+
+    /// `unzip -v` から各エントリ名 → 圧縮メソッド（"Stored" / "Defl:N" 等）の対応を得る。
+    /// 列は Length Method Size Cmpr Date Time CRC-32 Name の順（Name は末尾）。
+    private func zipMethods(_ zip: URL) throws -> [String: String] {
+        let res = try run("/usr/bin/unzip", ["-v", zip.path])
+        XCTAssertEqual(res.status, 0, "unzip -v 失敗: \(res.output)")
+        var map: [String: String] = [:]
+        for line in res.output.split(separator: "\n") {
+            let t = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            guard t.count >= 8, t[0].allSatisfy(\.isNumber) else { continue }  // ヘッダ/区切り行を除外
+            map[t[7...].joined(separator: " ")] = t[1]
+        }
+        return map
     }
 
     @discardableResult

@@ -11,13 +11,16 @@ public struct CleanZipOptions {
     public var password: String?
     public var encryption: ZipEncryption
     public var compressionLevel: Int32   // -1 = default, 0 = store, 1...9
+    public var smartStore: Bool          // 圧縮済み拡張子は自動 store（無駄な DEFLATE を避ける）
 
     public init(password: String? = nil,
                 encryption: ZipEncryption = .zipCrypto,
-                compressionLevel: Int32 = -1) {
+                compressionLevel: Int32 = -1,
+                smartStore: Bool = true) {
         self.password = password
         self.encryption = encryption
         self.compressionLevel = compressionLevel
+        self.smartStore = smartStore
     }
     var effectivePassword: String? {
         guard encryption != .none, let p = password, !p.isEmpty else { return nil }
@@ -53,6 +56,34 @@ public enum CleanZip {
         if name == ".TemporaryItems" { return true }
         if name == ".apdisk"         { return true }
         return false
+    }
+
+    /// すでに圧縮済みで、再 DEFLATE しても縮まない（時間だけ食う）拡張子（小文字）。
+    /// smart-store はこれらを store(0) で書き、無駄な圧縮を避ける（サイズ同・大幅高速）。
+    /// PDF は無圧縮ストリームを含む個体があるため意図的に除外（DESIGN.md §5 / smart-store 決定）。
+    static let precompressedExtensions: Set<String> = [
+        // 画像（非可逆 / 可逆問わず圧縮済み）
+        "jpg", "jpeg", "jpe", "png", "gif", "webp", "heic", "heif", "avif", "jp2", "jxl",
+        // 動画
+        "mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv",
+        "mpg", "mpeg", "3gp", "3g2", "m2ts", "mts", "ts",
+        // 音声
+        "mp3", "m4a", "aac", "ogg", "oga", "opus", "flac", "wma", "ac3",
+        // アーカイブ / 圧縮ストリーム
+        "zip", "gz", "tgz", "bz2", "tbz", "tbz2", "xz", "txz", "7z", "rar", "zst", "zstd",
+        "lz", "lz4", "lzma", "br", "cab", "z", "sit", "sitx", "arj", "lzh", "lha",
+        // zip コンテナ系（Office OOXML / ODF / Java / モバイル / 拡張パッケージ）
+        "docx", "docm", "xlsx", "xlsm", "pptx", "pptm",
+        "odt", "ods", "odp", "odg",
+        "epub", "jar", "war", "ear", "apk", "aab", "ipa", "aar",
+        "xpi", "crx", "vsix", "nupkg", "whl", "kmz", "3mf",
+        // 圧縮ディスクイメージ / 圧縮フォント
+        "dmg", "woff", "woff2",
+    ]
+
+    /// 拡張子が「圧縮済み」セットに含まれるか（大文字小文字を無視）。
+    static func isPrecompressed(_ ext: String) -> Bool {
+        !ext.isEmpty && precompressedExtensions.contains(ext.lowercased())
     }
 
     /// items をまとめて destination にクリーン ZIP 化。各トップレベル項目は
@@ -118,9 +149,12 @@ public enum CleanZip {
 
     private static func addFile(_ url: URL, zipPath: String,
                                 to archive: SSZipArchive, options: CleanZipOptions) throws {
+        // smart-store: 圧縮済み拡張子は DEFLATE を飛ばして store(0)。それ以外は指定レベル。
+        let level = (options.smartStore && isPrecompressed(url.pathExtension))
+            ? 0 : options.compressionLevel
         let ok = archive.writeFile(atPath: url.path,
                                    withFileName: zipPath,
-                                   compressionLevel: options.compressionLevel,
+                                   compressionLevel: level,
                                    password: options.effectivePassword,
                                    aes: options.useAES)
         if !ok { throw CleanZipError.writeFailed(url) }
