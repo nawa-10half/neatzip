@@ -65,6 +65,55 @@ final class CleanZipTests: XCTestCase {
         XCTAssertEqual(extracted, "hello")
     }
 
+    // MARK: - 統合: 無パスワード（プレーン zip）
+
+    func testNoPasswordPlain() throws {
+        let fm = FileManager.default
+        let root = try makeFixtureTree()
+        defer { try? fm.removeItem(at: root) }
+
+        let out = root.appendingPathComponent("plain.zip")
+        defer { try? fm.removeItem(at: out) }
+        try CleanZip.make(items: [root.appendingPathComponent("Project")], to: out)  // password 無し
+
+        // パスワード無しで普通に展開できる（= 暗号化なし）
+        let dest = root.appendingPathComponent("x-plain")
+        let r = try run("/usr/bin/unzip", ["-o", out.path, "-d", dest.path])
+        XCTAssertEqual(r.status, 0, "プレーン zip の展開失敗: \(r.output)")
+        let extracted = try String(contentsOf: dest.appendingPathComponent("Project/keep.txt"),
+                                   encoding: .utf8)
+        XCTAssertEqual(extracted, "hello")
+    }
+
+    // MARK: - 統合: AES-256 ラウンドトリップ
+
+    func testAES256RoundTrip() throws {
+        let sevenZip = "/opt/homebrew/bin/7z"
+        try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: sevenZip),
+                          "7z 未インストールのため AES 検証をスキップ")
+        let fm = FileManager.default
+        let root = try makeFixtureTree()
+        defer { try? fm.removeItem(at: root) }
+
+        let out = root.appendingPathComponent("aes.zip")
+        defer { try? fm.removeItem(at: out) }
+        let opts = CleanZipOptions(password: "aesPass", encryption: .aes256)
+        try CleanZip.make(items: [root.appendingPathComponent("Project")], to: out, options: opts)
+
+        // 7z（AES 対応）なら展開でき、内容一致
+        let dest = root.appendingPathComponent("x-aes")
+        let z = try run(sevenZip, ["x", "-paesPass", "-o\(dest.path)", out.path, "-y"])
+        XCTAssertEqual(z.status, 0, "7z 展開失敗: \(z.output)")
+        let extracted = try String(contentsOf: dest.appendingPathComponent("Project/keep.txt"),
+                                   encoding: .utf8)
+        XCTAssertEqual(extracted, "hello")
+
+        // Info-ZIP unzip は AES 非対応 → 正しいパスワードでも失敗するはず（= 確かに AES-256）
+        let dest2 = root.appendingPathComponent("x-unzip")
+        let u = try run("/usr/bin/unzip", ["-P", "aesPass", "-o", out.path, "-d", dest2.path])
+        XCTAssertNotEqual(u.status, 0, "unzip が AES を開けてしまった（AES になっていない疑い）")
+    }
+
     // MARK: - helpers
 
     /// Project/keep.txt, Project/sub/inner.txt の実ファイルと、各所に撒いたジャンクから成るツリー
