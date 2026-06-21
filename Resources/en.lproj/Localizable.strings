@@ -1,0 +1,43 @@
+/* NeatZip — English (development language / base) */
+
+/* Drop window */
+"drop.title" = "Drop files / folders here";
+"drop.subtitle" = "Creates a clean ZIP without __MACOSX / .DS_Store";
+
+/* Onboarding */
+"onboarding.title" = "Welcome to NeatZip";
+"onboarding.body" = "To use “Clean ZIP” from the Finder right-click menu, enable the NeatZip Finder extension.\n\nSystem Settings → General → Login Items & Extensions → Extensions → Finder extensions, then turn on NeatZip.\n\n(Drag & drop also works — just drop files/folders onto this window.)";
+"onboarding.openSettings" = "Open System Settings";
+"onboarding.later" = "Later";
+
+/* Right-click options dialog */
+"dialog.title" = "Create a clean ZIP with NeatZip";
+"dialog.passwordHint" = "Password (leave empty for no encryption)";
+"common.create" = "Create";
+"common.cancel" = "Cancel";
+"common.choose" = "Choose";
+
+/* Encryption */
+"enc.none" = "None (no encryption)";
+"enc.zipcrypto.long" = "Standard (ZipCrypto, compatible)";
+"enc.aes.long" = "AES-256 (strong)";
+
+/* Compression presets */
+"comp.standard" = "Standard";
+"comp.fast" = "Fastest";
+"comp.small" = "Smallest";
+
+/* Output location */
+"out.beside" = "Next to the original";
+"out.ask" = "Ask each time (choose location)";
+"out.fixed" = "Specific folder";
+
+/* Settings */
+"settings.defaultEncryption" = "Default encryption";
+"settings.compression" = "Compression";
+"settings.output" = "Output location";
+"settings.notSelected" = "(not selected)";
+"settings.chooseEllipsis" = "Choose…";
+"settings.promptEachTime" = "Ask for options on each right-click";
+"settings.caption.needsPassword" = "Encryption requires a password, so you’ll be asked each time.";
+"settings.caption.quick" = "Right-click creates a clean ZIP instantly (no encryption).";

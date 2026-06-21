@@ -4,6 +4,7 @@ name: NeatZip
 
 options:
   bundleIdPrefix: app.neatzip
+  developmentLanguage: en   # ベース=英語。ja は Resources/ja.lproj で提供（DESIGN §14 英語化）
   deploymentTarget:
     macOS: "13.0"          # WindowGroup + .windowResizability(.contentSize) が macOS 13+
   createIntermediateGroups: true

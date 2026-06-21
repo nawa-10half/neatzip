@@ -1,0 +1,5 @@
+/* CleanZipKit — English (errors shown to the user) */
+"error.nothingToArchive" = "There is nothing to archive.";
+"error.openFailed" = "Could not create the archive: %@";
+"error.writeFailed" = "Failed to write the file: %@";
+"error.cancelled" = "Cancelled.";

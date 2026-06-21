@@ -38,10 +38,16 @@ public enum CleanZipError: LocalizedError {
     case cancelled
     public var errorDescription: String? {
         switch self {
-        case .nothingToArchive:   return "圧縮対象がありません。"
-        case .openFailed(let u):  return "アーカイブを作成できませんでした: \(u.lastPathComponent)"
-        case .writeFailed(let u): return "ファイルの書き込みに失敗しました: \(u.lastPathComponent)"
-        case .cancelled:          return "キャンセルされました。"
+        case .nothingToArchive:
+            return NSLocalizedString("error.nothingToArchive", bundle: .module, comment: "")
+        case .openFailed(let u):
+            return String(format: NSLocalizedString("error.openFailed", bundle: .module, comment: ""),
+                          u.lastPathComponent)
+        case .writeFailed(let u):
+            return String(format: NSLocalizedString("error.writeFailed", bundle: .module, comment: ""),
+                          u.lastPathComponent)
+        case .cancelled:
+            return NSLocalizedString("error.cancelled", bundle: .module, comment: "")
         }
     }
 }

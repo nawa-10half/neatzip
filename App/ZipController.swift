@@ -42,14 +42,15 @@ final class ZipController {
     private func promptOptions(default defaultEnc: DefaultEncryption)
         -> (password: String?, encryption: ZipEncryption, proceed: Bool) {
         let alert = NSAlert()
-        alert.messageText = "NeatZip でクリーンZIPを作成"
-        alert.informativeText = "パスワード（空なら暗号化なし）"
-        alert.addButton(withTitle: "作成")
-        alert.addButton(withTitle: "キャンセル")
+        alert.messageText = String(localized: "dialog.title")
+        alert.informativeText = String(localized: "dialog.passwordHint")
+        alert.addButton(withTitle: String(localized: "common.create"))
+        alert.addButton(withTitle: String(localized: "common.cancel"))
 
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 28, width: 260, height: 24))
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        popup.addItems(withTitles: ["標準（ZipCrypto・互換重視）", "AES-256（強力）"])
+        popup.addItems(withTitles: [String(localized: "enc.zipcrypto.long"),
+                                    String(localized: "enc.aes.long")])
         popup.selectItem(at: defaultEnc == .aes256 ? 1 : 0)   // 設定の既定方式を初期選択
         let box = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 56))
         box.addSubview(field); box.addSubview(popup)

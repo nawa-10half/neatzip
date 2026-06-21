@@ -10,8 +10,8 @@ struct DropView: View {
                 .foregroundStyle(hovering ? Color.accentColor : .secondary)
             VStack(spacing: 8) {
                 Image(systemName: "doc.zipper").font(.system(size: 40))
-                Text("ここにファイル / フォルダをドロップ")
-                Text("__MACOSX・.DS_Store を除いたクリーンZIPを作成")
+                Text("drop.title")
+                Text("drop.subtitle")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

@@ -1,0 +1,43 @@
+/* NeatZip — 日本語 */
+
+/* ドロップ窓 */
+"drop.title" = "ここにファイル / フォルダをドロップ";
+"drop.subtitle" = "__MACOSX・.DS_Store を除いたクリーンZIPを作成";
+
+/* オンボーディング */
+"onboarding.title" = "NeatZip へようこそ";
+"onboarding.body" = "Finder の右クリックメニューから「クリーンZIP」を使うには、Finder 拡張を有効にしてください。\n\nシステム設定 →「一般」→「ログイン項目と機能拡張」→「機能拡張」→「Finder 拡張機能」で NeatZip を ON にします。\n\n（ドラッグ&ドロップは、このウインドウにファイル／フォルダを落とすだけで使えます）";
+"onboarding.openSettings" = "システム設定を開く";
+"onboarding.later" = "あとで";
+
+/* 右クリックのオプションダイアログ */
+"dialog.title" = "NeatZip でクリーンZIPを作成";
+"dialog.passwordHint" = "パスワード（空なら暗号化なし）";
+"common.create" = "作成";
+"common.cancel" = "キャンセル";
+"common.choose" = "選択";
+
+/* 暗号化 */
+"enc.none" = "なし（暗号化しない）";
+"enc.zipcrypto.long" = "標準（ZipCrypto・互換重視）";
+"enc.aes.long" = "AES-256（強力）";
+
+/* 圧縮プリセット */
+"comp.standard" = "標準";
+"comp.fast" = "速度優先";
+"comp.small" = "サイズ優先";
+
+/* 出力先 */
+"out.beside" = "元ファイルの隣";
+"out.ask" = "毎回確認（保存先を選ぶ）";
+"out.fixed" = "指定フォルダ";
+
+/* 設定 */
+"settings.defaultEncryption" = "既定の暗号化";
+"settings.compression" = "圧縮";
+"settings.output" = "出力先";
+"settings.notSelected" = "（未選択）";
+"settings.chooseEllipsis" = "選択…";
+"settings.promptEachTime" = "右クリック時に毎回オプションを確認";
+"settings.caption.needsPassword" = "暗号化を使う設定ではパスワード入力が必要なため、毎回確認します。";
+"settings.caption.quick" = "右クリックで即座にクリーンZIPを作成します（暗号化なし）。";

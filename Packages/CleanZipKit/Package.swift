@@ -6,6 +6,7 @@ import PackageDescription
 // C ライブラリは SwiftPM の C ターゲットとして同梱（バイナリ target を避け swift test/Xcode 両対応）。
 let package = Package(
     name: "CleanZipKit",
+    defaultLocalization: "en",   // CleanZipError をローカライズ（ja は Resources/ja.lproj）
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "CleanZipKit", targets: ["CleanZipKit"]),
@@ -35,7 +36,8 @@ let package = Package(
         ),
         .target(
             name: "CleanZipKit",
-            dependencies: ["Clibdeflate", "Cminizip"]
+            dependencies: ["Clibdeflate", "Cminizip"],
+            resources: [.process("Resources")]   // en/ja.lproj/Localizable.strings（CleanZipError）
         ),
         .testTarget(
             name: "CleanZipKitTests",

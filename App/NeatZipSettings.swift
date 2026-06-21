@@ -16,9 +16,9 @@ enum DefaultEncryption: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .none:      return "なし（暗号化しない）"
-        case .zipCrypto: return "標準（ZipCrypto・互換重視）"
-        case .aes256:    return "AES-256（強力）"
+        case .none:      return String(localized: "enc.none")
+        case .zipCrypto: return String(localized: "enc.zipcrypto.long")
+        case .aes256:    return String(localized: "enc.aes.long")
         }
     }
     var zipEncryption: ZipEncryption {
@@ -38,9 +38,9 @@ enum CompressionPreset: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .standard: return "標準"
-        case .fast:     return "速度優先"
-        case .small:    return "サイズ優先"
+        case .standard: return String(localized: "comp.standard")
+        case .fast:     return String(localized: "comp.fast")
+        case .small:    return String(localized: "comp.small")
         }
     }
     var level: Int32 {
@@ -58,9 +58,9 @@ enum OutputLocation: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .besideSource: return "元ファイルの隣"
-        case .ask:          return "毎回確認（保存先を選ぶ）"
-        case .fixedFolder:  return "指定フォルダ"
+        case .besideSource: return String(localized: "out.beside")
+        case .ask:          return String(localized: "out.ask")
+        case .fixedFolder:  return String(localized: "out.fixed")
         }
     }
 }

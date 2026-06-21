@@ -10,16 +10,10 @@ enum Onboarding {
         defaults.set(true, forKey: shownKey)
 
         let alert = NSAlert()
-        alert.messageText = "NeatZip へようこそ"
-        alert.informativeText = """
-        Finder の右クリックメニューから「クリーンZIP」を使うには、Finder 拡張を有効にしてください。
-
-        システム設定 →「一般」→「ログイン項目と機能拡張」→「機能拡張」→「Finder 拡張機能」で NeatZip を ON にします。
-
-        （ドラッグ&ドロップは、このウインドウにファイル／フォルダを落とすだけで使えます）
-        """
-        alert.addButton(withTitle: "システム設定を開く")
-        alert.addButton(withTitle: "あとで")
+        alert.messageText = String(localized: "onboarding.title")
+        alert.informativeText = String(localized: "onboarding.body")
+        alert.addButton(withTitle: String(localized: "onboarding.openSettings"))
+        alert.addButton(withTitle: String(localized: "onboarding.later"))
         if alert.runModal() == .alertFirstButtonReturn,
            let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
             NSWorkspace.shared.open(url)

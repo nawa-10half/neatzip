@@ -1,0 +1,5 @@
+/* CleanZipKit — 日本語（ユーザーに表示するエラー） */
+"error.nothingToArchive" = "圧縮対象がありません。";
+"error.openFailed" = "アーカイブを作成できませんでした: %@";
+"error.writeFailed" = "ファイルの書き込みに失敗しました: %@";
+"error.cancelled" = "キャンセルされました。";
