@@ -21,3 +21,14 @@ Extension/NeatZipFinderExtension.entitlements
 
 # Serena MCP の作業用ディレクトリ（プロジェクト固有のキャッシュ）
 .serena/
+
+# 速度プロト（DESIGN §5 #11 / prototype/README.md）: 自作ハーネスとパッチは追跡、
+# vendored 上流ソース・ビルド成果物・計測データ・ビルド済みバイナリは除外
+prototype/vendor/
+prototype/corpus/
+prototype/t/
+prototype/proto
+prototype/bench
+prototype/probe_crypto
+prototype/probe_pbkdf2
+prototype/probe_pbkdf2_par
