@@ -12,6 +12,7 @@ xcuserdata/
 # XcodeGen 生成物（project.yml から `xcodegen generate` で再生成）
 *.xcodeproj
 App/Info.plist
+App/Info-MAS.plist
 Extension/Info.plist
 Extension/NeatZipFinderExtension.entitlements
 

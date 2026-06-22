@@ -8,9 +8,12 @@ struct NeatZipApp: App {
             .windowResizability(.contentSize)
             .commands {
                 // アプリメニュー「NeatZip について」の直後に「アップデートを確認…」を置く（§14）。
+                // Sparkle は Developer ID 版のみ。MAS 版（Sparkle 非リンク）ではこの項目を出さない。
+                #if canImport(Sparkle)
                 CommandGroup(after: .appInfo) {
                     CheckForUpdatesCommand(updater: AppUpdater.shared.updater)
                 }
+                #endif
             }
         Settings { SettingsView() }   // ⌘, ＝既定の暗号化/圧縮/出力先（DESIGN §14）
     }
@@ -43,7 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self, name: NSWindow.didBecomeKeyNotification, object: nil)
             self.showDropWindows()
             self.didBecomeInteractive = true
+            #if canImport(Sparkle)
             AppUpdater.shared.start()   // 対話起動のときだけ自動アップデートを開始（ワンショットは終了済み）
+            #endif
             if !self.handledOpen { Onboarding.showIfNeeded() }
         }
     }

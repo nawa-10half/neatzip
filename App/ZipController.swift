@@ -66,6 +66,11 @@ final class ZipController {
     // MARK: - 出力先の解決（設定の OutputLocation に従う）
 
     private func resolveDestination(for items: [URL]) -> URL? {
+        #if MAS
+        // サンドボックスでは powerbox（保存パネル）経由でしか出力先に書き込めない。
+        // 「隣に出す」「固定フォルダ」はサンドボックス外のパスで不可なので常に保存パネルにする（DESIGN §12）。
+        return askDestination(for: items)
+        #else
         switch NeatZipSettings.outputLocation {
         case .besideSource:
             return CleanZip.suggestedDestination(for: items)
@@ -77,12 +82,15 @@ final class ZipController {
         case .ask:
             return askDestination(for: items)
         }
+        #endif
     }
 
     private func baseName(for items: [URL]) -> String {
         items.count == 1 ? items[0].deletingPathExtension().lastPathComponent : "Archive"
     }
 
+    #if !MAS
+    // 「隣に出す」「固定フォルダ」用の重複回避。MAS（保存パネル固定）では使わない。
     private func uniqueDestination(in folder: URL, for items: [URL]) -> URL {
         let fm = FileManager.default
         let base = baseName(for: items)
@@ -94,11 +102,20 @@ final class ZipController {
         }
         return url
     }
+    #endif
 
     private func askDestination(for items: [URL]) -> URL? {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = baseName(for: items) + ".zip"
         panel.allowedContentTypes = [.zip]
+        // 「元の隣」を初期値に: 元フォルダで開き <name>.zip を提案（重複は連番）。既定の「保存」で
+        // そのまま隣に出せる。MAS（サンドボックス）でも保存パネルは powerbox（別プロセス）なので
+        // 初期位置の指定は非束縛、確定時にその場所への書き込み権が付与される（DESIGN §12）。
+        if let suggested = CleanZip.suggestedDestination(for: items) {
+            panel.directoryURL = suggested.deletingLastPathComponent()
+            panel.nameFieldStringValue = suggested.lastPathComponent
+        } else {
+            panel.nameFieldStringValue = baseName(for: items) + ".zip"
+        }
         return panel.runModal() == .OK ? panel.url : nil
     }
 

@@ -1,3 +1,6 @@
+// Sparkle は Developer ID 版のみ（MAS は自己更新フレームワーク同梱不可）。MAS ターゲットは
+// Sparkle を依存に含めないため `canImport(Sparkle)` が false になり、このファイルは丸ごと除外される。
+#if canImport(Sparkle)
 import SwiftUI
 import Sparkle
 
@@ -54,3 +57,4 @@ private final class CheckForUpdatesModel: ObservableObject {
         updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheckForUpdates)
     }
 }
+#endif

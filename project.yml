@@ -1,5 +1,11 @@
 # XcodeGen spec — `xcodegen generate` で NeatZip.xcodeproj を生成する。
-# 設計: docs/DESIGN.md（§4 アーキテクチャ / §8 セットアップ / §9 バンドルID・エンタイトルメント）
+# 設計: docs/DESIGN.md（§4 アーキテクチャ / §8 セットアップ / §9 バンドルID・エンタイトルメント / §12 MAS）
+#
+# 二段構え（DESIGN §12・Keka 戦略）:
+#   NeatZip      … Developer ID 直配布。非サンドボックス＝元の隣に書ける。Sparkle で自動更新。
+#   NeatZip-MAS  … Mac App Store 版。App Sandbox 必須・Sparkle 不可（更新は App Store 任せ）。
+#                  出力は常に保存パネル（サンドボックスで powerbox 経由のみ書込可）。
+# コア（CleanZipKit）と App/Resources のソースは共有。差分はビルド設定 / entitlements / `MAS` フラグのみ。
 name: NeatZip
 
 options:
@@ -10,12 +16,12 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
-# エンジンはローカルパッケージに隔離（DESIGN.md §5 #7）。SSZipArchive 依存は CleanZipKit が所有
+# エンジンはローカルパッケージに隔離（DESIGN.md §5 #7）。
 packages:
   CleanZipKit:
     path: Packages/CleanZipKit
-  # 自動アップデート（Developer ID 直配布なので Sparkle 2 を採用・DESIGN §14）。
-  # ネスト XPC/ヘルパーの再署名は scripts/release.sh が担当（§10）。
+  # 自動アップデート（Developer ID 版のみ・DESIGN §14）。MAS 版は依存に含めない＝`#if canImport(Sparkle)`
+  # で updater コードがコンパイル除外される。ネスト XPC/ヘルパーの再署名は scripts/release.sh が担当（§10）。
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.3"
@@ -28,28 +34,23 @@ settings:
     SWIFT_VERSION: "5.0"          # Swift 5 言語モード（シングルトン/DispatchQueue をそのまま通す）
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""          # ローカルは未設定（ビルド確認は CODE_SIGNING_ALLOWED=NO）
-    ENABLE_HARDENED_RUNTIME: YES  # Developer ID 前提（§9）
+    ENABLE_HARDENED_RUNTIME: YES  # Developer ID 前提（§9）。MAS では署名時に無視される。
 
-targets:
-  # ── 本体アプリ: 非サンドボックス（Developer ID）。元の隣にその場書き込み（§4） ──
-  NeatZip:
+# 両アプリ共通の土台（ソース / 共有ビルド設定 / 共有 Info プロパティ）。
+# 各ターゲットは依存・バンドル設定・Info の差分だけを足す。
+targetTemplates:
+  App:
     type: application
     platform: macOS
     sources:
       - App
       - Resources
-    dependencies:
-      - package: CleanZipKit
-      - package: Sparkle                 # 自動アップデート（§14）
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip
         PRODUCT_NAME: NeatZip
-        ENABLE_APP_SANDBOX: NO            # 本体はサンドボックス OFF
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
-      path: App/Info.plist
       properties:
         CFBundleName: NeatZip
         CFBundleDisplayName: NeatZip
@@ -59,30 +60,15 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: ""
-        # ── Sparkle 自動アップデート（§14）──────────────────────────────────
-        # appcast の公開先。GitHub Releases 配信: 「最新リリースの appcast.xml アセット」を
-        # 指す安定 URL（Pages 不要・各リリースで appcast.xml を再アップロードすれば不変）。
-        # 将来 neatzip.app を取得したらこの値だけ差し替える。
-        SUFeedURL: https://github.com/nawa-10half/neatzip/releases/latest/download/appcast.xml
-        # EdDSA 公開鍵（秘密鍵はリリース PC の Keychain。generate_keys で生成・§10）。
-        SUPublicEDKey: RNOsevwcrlbpmfLAcRIZcJlXGGVHmrNht49Ww/twSjc=
-        # 起動時にバックグラウンドで自動チェック（初回の許可ダイアログを出さず即有効化）。
-        SUEnableAutomaticChecks: true
-        # 「このアプリで開く」/ Dock アイコンへのドロップで任意のファイル/フォルダを受けるための宣言。
-        # public.item は全ファイル・フォルダの基底 UTI。Alternate ランクで既定ハンドラにはしない。
+        # 「このアプリで開く」/ Dock アイコンへのドロップで任意のファイル/フォルダを受ける宣言。
         CFBundleDocumentTypes:
           - CFBundleTypeName: "ファイル / フォルダ"
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - public.item
-        # ── Finder 右クリック「NeatZip でクリーンZIP」= macOS Services（§7）──────
-        # 旧 Finder Sync 拡張は全マウントボリュームを claim していたため、外付けディスクの
-        # アイコンが NeatZip に化ける副作用があった。これを廃して Services に移行した。
-        # NSSendFileTypes を public.item（ファイル/フォルダのみ）に絞り、テキスト等の文脈には
-        # 出さない＝Finder で競合サービスが少なく右クリック直下に出やすい。タイトルは
-        # ServicesMenu.strings（en/ja）でローカライズ。ハンドラは本体（非サンドボックス）の
-        # AppDelegate cleanZip:。NSRequiredContext は空でも必須（無いと自動表示されない）。
+        # Finder 右クリック「NeatZip でクリーンZIP」= macOS Services（§7）。両版で共通。
+        # ハンドラは AppDelegate cleanZip:。NSRequiredContext は空でも必須（無いと自動表示されない）。
         NSServices:
           - NSMenuItem:
               default: "Clean ZIP with NeatZip…"
@@ -91,3 +77,39 @@ targets:
             NSSendFileTypes:
               - public.item
             NSRequiredContext: {}
+
+targets:
+  # ── 本体アプリ: 非サンドボックス（Developer ID）。元の隣にその場書き込み（§4） ──
+  NeatZip:
+    templates: [App]
+    dependencies:
+      - package: CleanZipKit
+      - package: Sparkle                 # 自動アップデート（§14）。MAS 版には付けない。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip
+        ENABLE_APP_SANDBOX: NO            # 非サンドボックス
+    info:
+      path: App/Info.plist
+      properties:
+        # ── Sparkle 自動アップデート（§14）。MAS 版の Info には含めない ──────────
+        # appcast の公開先（GitHub Releases・最新リリースの appcast.xml を指す安定 URL）。
+        SUFeedURL: https://github.com/nawa-10half/neatzip/releases/latest/download/appcast.xml
+        # EdDSA 公開鍵（秘密鍵はリリース PC の Keychain。generate_keys で生成・§10）。
+        SUPublicEDKey: RNOsevwcrlbpmfLAcRIZcJlXGGVHmrNht49Ww/twSjc=
+        # 起動時にバックグラウンドで自動チェック。
+        SUEnableAutomaticChecks: true
+
+  # ── Mac App Store 版: App Sandbox 必須・Sparkle なし・出力は常に保存パネル（§12） ──
+  NeatZip-MAS:
+    templates: [App]
+    dependencies:
+      - package: CleanZipKit              # Sparkle は付けない（canImport が false→updater 除外）
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip
+        CODE_SIGN_ENTITLEMENTS: App/NeatZip-MAS.entitlements
+        # サンドボックス/保存パネル固定の分岐に使う（ZipController / SettingsView の `#if MAS`）。
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: MAS
+    info:
+      path: App/Info-MAS.plist            # 共有プロパティのみ（SU* キー無し）を生成
