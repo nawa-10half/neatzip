@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/og-image.png" alt="NeatZip — Clean ZIP archives, straight from Finder." width="640">
+</p>
+
 # NeatZip
 
 A single-purpose macOS app that creates **clean ZIP archives** — no
