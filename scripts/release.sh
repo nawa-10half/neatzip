@@ -45,6 +45,7 @@ print -r -- "▸ Release ビルド + Developer ID 署名..."
 rm -rf "$DERIVED"
 xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$SCHEME" -configuration Release \
   -derivedDataPath "$DERIVED" \
+  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$SIGN_ID" DEVELOPMENT_TEAM="$TEAM_ID" \
   CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES \
   ENABLE_HARDENED_RUNTIME=YES OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime" \
@@ -125,7 +126,8 @@ xcrun stapler validate "$DMG" && print -r -- "✅ 配布物の公証・ステー
 #   ・appcast.xml は dmg と一緒に Release アセットとしてアップロードする（SUFeedURL=
 #     .../releases/latest/download/appcast.xml が常に最新を指す）。
 #   ・SKIP_APPCAST=1 でこの工程だけ省略可。
-REPO_SLUG="$(git remote get-url origin 2>/dev/null | sed -E 's#.*github\.com[:/]([^/]+/[^/]+?)(\.git)?$#\1#')"
+# owner/repo を remote URL から導出（BSD sed 互換: 遅延量指定子を使わず2段で）。
+REPO_SLUG="$(git remote get-url origin 2>/dev/null | sed -E 's#^.*github\.com[:/]##; s#\.git$##')"
 DEFAULT_PREFIX="${REPO_SLUG:+https://github.com/$REPO_SLUG/releases/download/v$VERSION/}"
 DOWNLOAD_URL_PREFIX="${DOWNLOAD_URL_PREFIX:-$DEFAULT_PREFIX}"
 GEN_APPCAST="$(find "$DERIVED/SourcePackages/artifacts" -name generate_appcast -type f 2>/dev/null | head -1)"
@@ -135,7 +137,11 @@ if [[ "${SKIP_APPCAST:-0}" != "1" && -n "$GEN_APPCAST" ]]; then
   mkdir -p "$UPDATES"
   cp -f "$DMG" "$UPDATES/"
   # 過去バージョンの dmg も $UPDATES に置いておくと累積 appcast を再生成できる（履歴を残す）。
-  "$GEN_APPCAST" ${DOWNLOAD_URL_PREFIX:+--download-url-prefix "$DOWNLOAD_URL_PREFIX"} "$UPDATES"
+  # zsh はクォート無しのパラメータ展開を単語分割しないため、任意オプションは配列で渡す
+  # （関数外なので local は使わない）。
+  PREFIX_ARG=()
+  [[ -n "${DOWNLOAD_URL_PREFIX:-}" ]] && PREFIX_ARG=(--download-url-prefix "$DOWNLOAD_URL_PREFIX")
+  "$GEN_APPCAST" "${PREFIX_ARG[@]}" "$UPDATES"
   if [[ -f "$UPDATES/appcast.xml" ]]; then
     cp -f "$UPDATES/appcast.xml" "$DIST/appcast.xml"
     print -r -- "  $DIST/appcast.xml"
