@@ -23,8 +23,8 @@ packages:
 # 全ターゲット共通のビルド設定
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.1"
+    CURRENT_PROJECT_VERSION: "2"
     SWIFT_VERSION: "5.0"          # Swift 5 言語モード（シングルトン/DispatchQueue をそのまま通す）
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""          # ローカルは未設定（ビルド確認は CODE_SIGNING_ALLOWED=NO）
