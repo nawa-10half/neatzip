@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  開発インストール（scripts/install.sh）専用のエンタイトルメント。
+  install.sh は ad-hoc 署名 + Hardened Runtime でビルドするが、ad-hoc は TeamIdentifier を
+  持たないため、Hardened Runtime の Library Validation が同梱 Sparkle.framework(ad-hoc)の
+  ロードを拒否する（dyld: "code signature ... not valid for use in process: mapping"）。
+  dev に限り Library Validation を無効化してこれを回避する。
+  配布版(release.sh)は Developer ID で本体・Sparkle を同一チーム署名するため本ファイルは使わない。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<key>com.apple.security.get-task-allow</key>
+	<true/>
+</dict>
+</plist>

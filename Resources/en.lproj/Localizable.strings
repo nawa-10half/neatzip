@@ -9,9 +9,8 @@
 
 /* Onboarding */
 "onboarding.title" = "Welcome to NeatZip";
-"onboarding.body" = "To use “Clean ZIP” from the Finder right-click menu, enable the NeatZip Finder extension.\n\nSystem Settings → General → Login Items & Extensions → Extensions → Finder extensions, then turn on NeatZip.\n\n(Drag & drop also works — just drop files/folders onto this window.)";
-"onboarding.openSettings" = "Open System Settings";
-"onboarding.later" = "Later";
+"onboarding.body" = "Right-click any files or folders in Finder and choose “Clean ZIP with NeatZip” to create a clean ZIP — without __MACOSX / .DS_Store.\n\n(Drag & drop also works — just drop files/folders onto this window.)";
+"onboarding.gotIt" = "Get Started";
 
 /* Right-click options dialog */
 "dialog.title" = "Create a clean ZIP with NeatZip";

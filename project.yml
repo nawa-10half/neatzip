@@ -41,7 +41,6 @@ targets:
     dependencies:
       - package: CleanZipKit
       - package: Sparkle                 # 自動アップデート（§14）
-      - target: NeatZipFinderExtension   # appex を本体に embed（自動で Embed App Extensions フェーズ）
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip
@@ -69,8 +68,7 @@ targets:
         SUPublicEDKey: RNOsevwcrlbpmfLAcRIZcJlXGGVHmrNht49Ww/twSjc=
         # 起動時にバックグラウンドで自動チェック（初回の許可ダイアログを出さず即有効化）。
         SUEnableAutomaticChecks: true
-        # Finder 拡張からの handoff（NSWorkspace.open(urls, withApplicationAt:)）を
-        # LaunchServices に許可させるため、任意のファイル/フォルダを開けると宣言する。
+        # 「このアプリで開く」/ Dock アイコンへのドロップで任意のファイル/フォルダを受けるための宣言。
         # public.item は全ファイル・フォルダの基底 UTI。Alternate ランクで既定ハンドラにはしない。
         CFBundleDocumentTypes:
           - CFBundleTypeName: "ファイル / フォルダ"
@@ -78,35 +76,18 @@ targets:
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - public.item
-        # 拡張からの handoff は file URL ではなく独自スキーム neatzip:// でパスを渡す
-        # （サンドボックス拡張は Finder 選択 file URL のアクセス権を本体へ移譲できないため）。
-        CFBundleURLTypes:
-          - CFBundleURLName: app.neatzip.NeatZip
-            CFBundleURLSchemes:
-              - neatzip
-
-  # ── Finder Sync 拡張: サンドボックス必須（§4/§9）。役割は handoff のみ ──
-  NeatZipFinderExtension:
-    type: app-extension
-    platform: macOS
-    sources:
-      - Extension
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.neatzip.NeatZip.FinderExtension
-        PRODUCT_NAME: NeatZipFinderExtension
-    info:
-      path: Extension/Info.plist
-      properties:
-        CFBundleName: NeatZipFinderExtension
-        CFBundleDisplayName: NeatZip Finder Extension
-        CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.FinderSync
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).FinderSyncExtension
-    entitlements:
-      path: Extension/NeatZipFinderExtension.entitlements
-      properties:
-        com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-only: true
+        # ── Finder 右クリック「NeatZip でクリーンZIP」= macOS Services（§7）──────
+        # 旧 Finder Sync 拡張は全マウントボリュームを claim していたため、外付けディスクの
+        # アイコンが NeatZip に化ける副作用があった。これを廃して Services に移行した。
+        # NSSendFileTypes を public.item（ファイル/フォルダのみ）に絞り、テキスト等の文脈には
+        # 出さない＝Finder で競合サービスが少なく右クリック直下に出やすい。タイトルは
+        # ServicesMenu.strings（en/ja）でローカライズ。ハンドラは本体（非サンドボックス）の
+        # AppDelegate cleanZip:。NSRequiredContext は空でも必須（無いと自動表示されない）。
+        NSServices:
+          - NSMenuItem:
+              default: "Clean ZIP with NeatZip…"
+            NSMessage: cleanZip
+            NSPortName: NeatZip
+            NSSendFileTypes:
+              - public.item
+            NSRequiredContext: {}

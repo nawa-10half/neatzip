@@ -1,0 +1,3 @@
+/* macOS Services メニュー（Finder 右クリック）。
+   キーは Info.plist の NSServices > NSMenuItem > default 値。 */
+"Clean ZIP with NeatZip…" = "Clean ZIP with NeatZip…";

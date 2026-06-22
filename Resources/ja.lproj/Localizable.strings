@@ -9,9 +9,8 @@
 
 /* オンボーディング */
 "onboarding.title" = "NeatZip へようこそ";
-"onboarding.body" = "Finder の右クリックメニューから「クリーンZIP」を使うには、Finder 拡張を有効にしてください。\n\nシステム設定 →「一般」→「ログイン項目と機能拡張」→「機能拡張」→「Finder 拡張機能」で NeatZip を ON にします。\n\n（ドラッグ&ドロップは、このウインドウにファイル／フォルダを落とすだけで使えます）";
-"onboarding.openSettings" = "システム設定を開く";
-"onboarding.later" = "あとで";
+"onboarding.body" = "Finder でファイル／フォルダを右クリックし、「NeatZip でクリーンZIP」を選ぶと、__MACOSX・.DS_Store を除いたクリーンZIPを作成します。\n\n（ドラッグ&ドロップは、このウインドウにファイル／フォルダを落とすだけで使えます）";
+"onboarding.gotIt" = "始める";
 
 /* 右クリックのオプションダイアログ */
 "dialog.title" = "NeatZip でクリーンZIPを作成";

@@ -74,13 +74,11 @@ if [[ -d "$SPK" ]]; then
   codesign -f -s "$SIGN_ID" --timestamp -o runtime "$APP"
 fi
 
-# ── 署名検証（本体・拡張・ネスト全体が Developer ID + hardened か）──────────
+# ── 署名検証（本体・ネスト全体が Developer ID + hardened か）────────────────
 print -r -- "▸ 署名を検証..."
 codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -2
 codesign -dv --verbose=4 "$APP" 2>&1 | grep -iE 'Authority=Developer ID|flags=.*runtime' | head -2 \
   || die "本体が Developer ID + hardened runtime で署名されていません"
-APPEX="$APP/Contents/PlugIns/${APP_NAME}FinderExtension.appex"
-[[ -d "$APPEX" ]] && codesign --verify --strict "$APPEX" && print -r -- "  appex OK"
 
 # ── 配布 .dmg を作る（/Applications シンボリックリンク同梱）──────────────────
 print -r -- "▸ .dmg を作成..."

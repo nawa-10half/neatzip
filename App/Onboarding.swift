@@ -1,6 +1,7 @@
 import AppKit
 
-/// 初回起動時に Finder 拡張の有効化方法を案内する（§11）。
+/// 初回（対話）起動時に使い方を一度だけ案内する（§11）。
+/// 右クリックは macOS Services として自動登録されるため、ユーザー側の有効化操作は不要。
 enum Onboarding {
     private static let shownKey = "NeatZipOnboardingShown"
 
@@ -12,11 +13,7 @@ enum Onboarding {
         let alert = NSAlert()
         alert.messageText = String(localized: "onboarding.title")
         alert.informativeText = String(localized: "onboarding.body")
-        alert.addButton(withTitle: String(localized: "onboarding.openSettings"))
-        alert.addButton(withTitle: String(localized: "onboarding.later"))
-        if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences") {
-            NSWorkspace.shared.open(url)
-        }
+        alert.addButton(withTitle: String(localized: "onboarding.gotIt"))
+        alert.runModal()
     }
 }

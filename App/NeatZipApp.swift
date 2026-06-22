@@ -18,54 +18,66 @@ struct NeatZipApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var handledOpen = false
-    /// 右クリック（neatzip:// handoff）起動か。ドロップ窓を見せず、完了後に終了する。
+    /// Finder 右クリック（macOS Services）で起動したか。ドロップ窓を見せず、完了後に終了する。
     private var isHandoff = false
-
-    // Finder 拡張（独自スキーム neatzip://）/ "このアプリで開く"（file URL）から対象を受信。
-    func application(_ application: NSApplication, open urls: [URL]) {
-        handledOpen = true
-        // Finder 右クリック（neatzip:// handoff）で起動した場合は一回限りのヘルパーとして
-        // 完了後に終了する。"このアプリで開く"（file URL）やドロップ窓の対話利用では終了しない。
-        let fromHandoff = urls.contains { $0.scheme == "neatzip" }
-        if fromHandoff {
-            isHandoff = true
-            hideDropWindows()   // 右クリック起動はドロップ窓を見せない
-        }
-        let items = urls.flatMap { url -> [URL] in
-            if url.isFileURL { return [url] }                       // "このアプリで開く" / ドロップ経由
-            if url.scheme == "neatzip" { return Self.itemURLs(from: url) }  // Finder 拡張の handoff
-            return []
-        }
-        guard !items.isEmpty else {
-            if fromHandoff { NSApp.terminate(nil) }
-            return
-        }
-        DispatchQueue.main.async { ZipController.shared.begin(with: items, quitWhenDone: fromHandoff) }
-    }
+    /// 通常（対話）起動でドロップ窓を表示済みか。サービス呼び出しをワンショット扱いするか判定する。
+    private var didBecomeInteractive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 起動経路が確定するまでドロップ窓を伏せておく（透明化＋order out）。右クリック起動なら
-        // 一度も見せずに済む＝チラつきゼロ。SwiftUI が後から窓を出すケースに備え、
-        // ウィンドウ生成も監視して handoff 中は伏せ続ける（進捗パネル＝NSPanel は対象外）。
+        // Finder 右クリック「NeatZip でクリーンZIP」(Info.plist の NSServices) のハンドラを登録。
+        NSApp.servicesProvider = self
+
+        // 起動経路が確定するまでドロップ窓を伏せておく（透明化＋order out）。サービス起動なら
+        // 一度も見せずに済む＝チラつきゼロ。SwiftUI が後から窓を出すケースに備え、ウィンドウ生成も
+        // 監視してワンショット中は伏せ続ける（進捗パネル＝NSPanel は対象外）。
         hideDropWindows()
         NotificationCenter.default.addObserver(
             self, selector: #selector(windowDidBecomeKey(_:)),
             name: NSWindow.didBecomeKeyNotification, object: nil)
 
-        // openURLs（neatzip:// / file URL）は起動直後に届く。少し待って経路を見極め、
-        // handoff でなければドロップ窓を出す。直接起動の初回のみ拡張有効化を案内する。
+        // サービス（cleanZip:）/ 開く要求は起動直後に届く。少し待って経路を見極め、ワンショット
+        // でなければドロップ窓を出す。対話起動の初回のみオンボーディングを案内する。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, !self.isHandoff else { return }   // handoff は伏せたまま終了する
+            guard let self, !self.isHandoff else { return }   // サービス起動は伏せたまま終了する
             NotificationCenter.default.removeObserver(
                 self, name: NSWindow.didBecomeKeyNotification, object: nil)
             self.showDropWindows()
-            AppUpdater.shared.start()   // 対話起動のときだけ自動アップデートを開始（handoff は終了済み）
+            self.didBecomeInteractive = true
+            AppUpdater.shared.start()   // 対話起動のときだけ自動アップデートを開始（ワンショットは終了済み）
             if !self.handledOpen { Onboarding.showIfNeeded() }
         }
     }
 
-    /// handoff 中に SwiftUI がドロップ窓を出してきたら即伏せる。進捗パネルやダイアログ
-    /// （いずれも NSPanel）には触れない。
+    /// 「このアプリで開く」/ Dock アイコンへのドロップ（file URL）。対話利用なので完了後も終了しない。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let items = urls.filter { $0.isFileURL }
+        guard !items.isEmpty else { return }
+        handledOpen = true
+        DispatchQueue.main.async { ZipController.shared.begin(with: items, quitWhenDone: false) }
+    }
+
+    // MARK: - Finder 右クリック（macOS Services「NeatZip でクリーンZIP」）
+
+    /// Info.plist の NSServices（NSMessage = cleanZip）から呼ばれる。選択されたファイル/フォルダを
+    /// pasteboard で受け取り、本体（非サンドボックス）が直接 ZIP 化する。まだ対話状態に入っていない
+    /// ＝サービスで起動された場合はワンショットとして完了後に終了し、ドロップ窓は一度も見せない。
+    @objc func cleanZip(_ pboard: NSPasteboard, userData: String?,
+                        error: AutoreleasingUnsafeMutablePointer<NSString>?) {
+        let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let items = (pboard.readObjects(forClasses: [NSURL.self], options: opts) as? [URL]) ?? []
+        guard !items.isEmpty else { return }
+        handledOpen = true
+        let oneShot = !didBecomeInteractive
+        if oneShot {
+            isHandoff = true
+            hideDropWindows()
+        }
+        NSApp.activate(ignoringOtherApps: true)   // 進捗パネル/オプションダイアログを前面に出す
+        DispatchQueue.main.async { ZipController.shared.begin(with: items, quitWhenDone: oneShot) }
+    }
+
+    /// ワンショット（サービス）中に SwiftUI がドロップ窓を出してきたら即伏せる。進捗パネルや
+    /// ダイアログ（いずれも NSPanel）には触れない。
     @objc private func windowDidBecomeKey(_ note: Notification) {
         guard isHandoff, let w = note.object as? NSWindow, isDropWindow(w) else { return }
         hide(w)
@@ -77,8 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// それ以外＝ドロップ窓とみなす。
     /// 設定ウィンドウ（Settings シーン・⌘,）は NSPanel ではないがこの判定に巻き込まれない:
     /// 表示制御は起動時のみ（observer は 0.5s 後に解除）で、設定窓はユーザーが起動後に開くため
-    /// その時点では存在しない。handoff は設定を開く前に終了する。将来 launch 直後に出る非NSPanel
-    /// ウィンドウを足す場合はここで明示除外すること。
+    /// その時点では存在しない。ワンショットは設定を開く前に終了する。将来 launch 直後に出る
+    /// 非 NSPanel ウィンドウを足す場合はここで明示除外すること。
     private func isDropWindow(_ w: NSWindow) -> Bool { !(w is NSPanel) }
 
     /// 補助 UI（NSPanel）を除いた、本体のドロップ窓群。
@@ -93,14 +105,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for w in ws { w.alphaValue = 1 }
         ws.first?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-    }
-
-    /// neatzip://zip?p=<path>&p=<path>... を file URL 配列へ復元する
-    private static func itemURLs(from url: URL) -> [URL] {
-        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return [] }
-        return (comps.queryItems ?? [])
-            .filter { $0.name == "p" }
-            .compactMap { $0.value }
-            .map { URL(fileURLWithPath: $0) }
     }
 }
