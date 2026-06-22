@@ -34,6 +34,30 @@ func writeCompressible(_ u: URL, bytes: Int) {
 let urandom = FileHandle(forReadingAtPath: "/dev/urandom")!
 func writeRandom(_ u: URL, bytes: Int) { try! urandom.readData(ofLength: bytes).write(to: u) }
 
+// ---- CLI モード: `--make <src> <dst> [--aes <pw>]` で出荷時既定の CleanZip.make() を end-to-end 計測 ----
+// 既存ディスク上のコーパスに対し本番エンジンを 1 回走らせ、機械可読 1 行を返すだけ（fixture スイートは実行しない）。
+// scripts/bench/vs-finder.sh が ditto(Finder相当) とのヘッドツーヘッドに使う。
+let argv = CommandLine.arguments
+if let mi = argv.firstIndex(of: "--make") {
+    guard argv.count > mi + 2 else {
+        FileHandle.standardError.write(Data("usage: CleanZipBench --make <src> <dst> [--aes <pw>]\n".utf8)); exit(2)
+    }
+    let src = URL(fileURLWithPath: argv[mi + 1])
+    let dst = URL(fileURLWithPath: argv[mi + 2])
+    var opts = CleanZipOptions(compressionLevel: -1)   // 出荷時の既定（-1→level6 / smartStore 既定）
+    if let ai = argv.firstIndex(of: "--aes") {
+        guard argv.count > ai + 1 else { FileHandle.standardError.write(Data("--aes は引数が必要\n".utf8)); exit(2) }
+        opts = CleanZipOptions(password: argv[ai + 1], encryption: .aes256, compressionLevel: -1)
+    }
+    try? fm.removeItem(at: dst)
+    let info = dirInfo(src)
+    let t = try! timeIt { _ = try CleanZip.make(items: [src], to: dst, options: opts) }
+    let outB = fileSize(dst)
+    // スクリプトが拾う 1 行（MB は base-1000、対 ditto は比なので単位非依存）。
+    print(String(format: "TIME=%.4f INMB=%.3f OUTMB=%.3f FILES=%d", t, mb(info.bytes), mb(outB), info.files))
+    exit(0)
+}
+
 let root = fm.temporaryDirectory.appendingPathComponent("neatzip-bench-\(UUID().uuidString)")
 try fm.createDirectory(at: root, withIntermediateDirectories: true)
 defer { try? fm.removeItem(at: root) }
