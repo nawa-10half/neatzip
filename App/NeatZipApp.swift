@@ -6,6 +6,12 @@ struct NeatZipApp: App {
     var body: some Scene {
         WindowGroup { DropView() }
             .windowResizability(.contentSize)
+            .commands {
+                // アプリメニュー「NeatZip について」の直後に「アップデートを確認…」を置く（§14）。
+                CommandGroup(after: .appInfo) {
+                    CheckForUpdatesCommand(updater: AppUpdater.shared.updater)
+                }
+            }
         Settings { SettingsView() }   // ⌘, ＝既定の暗号化/圧縮/出力先（DESIGN §14）
     }
 }
@@ -53,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(
                 self, name: NSWindow.didBecomeKeyNotification, object: nil)
             self.showDropWindows()
+            AppUpdater.shared.start()   // 対話起動のときだけ自動アップデートを開始（handoff は終了済み）
             if !self.handledOpen { Onboarding.showIfNeeded() }
         }
     }

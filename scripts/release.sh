@@ -53,6 +53,26 @@ xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$SCHEME" -configuration Relea
   build >/dev/null
 [[ -d "$APP" ]] || die "ビルド成果物が見つかりません: $APP"
 
+# ── Sparkle のネスト XPC/ヘルパーを Developer ID + Hardened Runtime で再署名 ──
+# xcodebuild の build 経路（archive/export を使わない）は Sparkle.framework 本体は
+# 署名し直すが、内部の XPCServices/ヘルパーは ad-hoc 署名のまま残る。このままだと
+# 公証で「nested code は Developer ID + hardened runtime で署名されていない」と弾かれる。
+# Sparkle 公式手順どおり内側→外側へ手で署名する（--deep は使わない・§10）。
+SPK="$APP/Contents/Frameworks/Sparkle.framework"
+if [[ -d "$SPK" ]]; then
+  print -r -- "▸ Sparkle のネストコンポーネントを再署名..."
+  V="$SPK/Versions/$(readlink "$SPK/Versions/Current")"   # 通常 B（バージョン記号に依存しない）
+  codesign -f -s "$SIGN_ID" --timestamp -o runtime "$V/XPCServices/Installer.xpc"
+  # Downloader.xpc はサンドボックス＋ネットワーク権限を持つので entitlements を保持する
+  codesign -f -s "$SIGN_ID" --timestamp -o runtime --preserve-metadata=entitlements "$V/XPCServices/Downloader.xpc"
+  codesign -f -s "$SIGN_ID" --timestamp -o runtime "$V/Autoupdate"
+  codesign -f -s "$SIGN_ID" --timestamp -o runtime "$V/Updater.app"
+  codesign -f -s "$SIGN_ID" --timestamp -o runtime "$SPK"
+  # ネストを差し替えたので本体の封印（CodeResources）を再計算する。--deep は使わず本体のみ。
+  # 明示 entitlements は無いので get-task-allow は注入されない（§10 の落とし穴対策と整合）。
+  codesign -f -s "$SIGN_ID" --timestamp -o runtime "$APP"
+fi
+
 # ── 署名検証（本体・拡張・ネスト全体が Developer ID + hardened か）──────────
 print -r -- "▸ 署名を検証..."
 codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -2
@@ -96,4 +116,41 @@ print -r -- "▸ Gatekeeper 評価..."
 spctl -a -t open --context context:primary-signature -v "$DMG" 2>&1 | tail -2 || true
 xcrun stapler validate "$DMG" && print -r -- "✅ 配布物の公証・ステープル OK"
 
+# ── Sparkle appcast を生成（EdDSA 署名つき）─────────────────────────────────
+# 秘密鍵は Keychain（一度だけ `generate_keys` で生成済み）。配布 .dmg を updates フォルダに
+# 集約し、generate_appcast が各更新に EdDSA 署名を付けて appcast.xml を出力する。
+# 配信は GitHub Releases:
+#   ・enclosure(dmg) URL は当該バージョンのタグ付きアセット URL（DOWNLOAD_URL_PREFIX）。
+#     remote から owner/repo を自動導出し v$VERSION を既定にする（環境変数で上書き可）。
+#   ・appcast.xml は dmg と一緒に Release アセットとしてアップロードする（SUFeedURL=
+#     .../releases/latest/download/appcast.xml が常に最新を指す）。
+#   ・SKIP_APPCAST=1 でこの工程だけ省略可。
+REPO_SLUG="$(git remote get-url origin 2>/dev/null | sed -E 's#.*github\.com[:/]([^/]+/[^/]+?)(\.git)?$#\1#')"
+DEFAULT_PREFIX="${REPO_SLUG:+https://github.com/$REPO_SLUG/releases/download/v$VERSION/}"
+DOWNLOAD_URL_PREFIX="${DOWNLOAD_URL_PREFIX:-$DEFAULT_PREFIX}"
+GEN_APPCAST="$(find "$DERIVED/SourcePackages/artifacts" -name generate_appcast -type f 2>/dev/null | head -1)"
+if [[ "${SKIP_APPCAST:-0}" != "1" && -n "$GEN_APPCAST" ]]; then
+  print -r -- "▸ appcast を生成（enclosure 接頭辞: ${DOWNLOAD_URL_PREFIX:-未設定}）..."
+  UPDATES="$DIST/updates"
+  mkdir -p "$UPDATES"
+  cp -f "$DMG" "$UPDATES/"
+  # 過去バージョンの dmg も $UPDATES に置いておくと累積 appcast を再生成できる（履歴を残す）。
+  "$GEN_APPCAST" ${DOWNLOAD_URL_PREFIX:+--download-url-prefix "$DOWNLOAD_URL_PREFIX"} "$UPDATES"
+  if [[ -f "$UPDATES/appcast.xml" ]]; then
+    cp -f "$UPDATES/appcast.xml" "$DIST/appcast.xml"
+    print -r -- "  $DIST/appcast.xml"
+    [[ -z "${DOWNLOAD_URL_PREFIX:-}" ]] && \
+      print -r -- "  ⚠️ DOWNLOAD_URL_PREFIX 未設定のため enclosure URL は暫定（remote 未検出）。"
+  fi
+elif [[ -z "$GEN_APPCAST" ]]; then
+  print -r -- "⏭  generate_appcast が見つからないため appcast 生成はスキップ。"
+fi
+
 print -r -- "🎉 完成: $DMG"
+# ── 公開（GitHub Release を作成して dmg + appcast.xml をアップロード）────────
+# 公証済み dmg と appcast.xml を v$VERSION タグの Release として公開する（手動実行）:
+if [[ -f "$DIST/appcast.xml" ]]; then
+  print -r -- "▸ 次のコマンドで公開（タグ v$VERSION の Release を作成）:"
+  print -r -- "    gh release create v$VERSION \"$DMG\" \"$DIST/appcast.xml\" \\"
+  print -r -- "      --repo ${REPO_SLUG:-<owner/repo>} --title \"NeatZip $VERSION\" --notes \"...\""
+fi

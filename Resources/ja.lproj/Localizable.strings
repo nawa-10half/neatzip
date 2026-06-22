@@ -1,5 +1,8 @@
 /* NeatZip — 日本語 */
 
+/* アプリメニュー */
+"menu.checkForUpdates" = "アップデートを確認…";
+
 /* ドロップ窓 */
 "drop.title" = "ここにファイル / フォルダをドロップ";
 "drop.subtitle" = "__MACOSX・.DS_Store を除いたクリーンZIPを作成";

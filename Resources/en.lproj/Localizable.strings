@@ -1,5 +1,8 @@
 /* NeatZip — English (development language / base) */
 
+/* App menu */
+"menu.checkForUpdates" = "Check for Updates…";
+
 /* Drop window */
 "drop.title" = "Drop files / folders here";
 "drop.subtitle" = "Creates a clean ZIP without __MACOSX / .DS_Store";

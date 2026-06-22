@@ -14,6 +14,11 @@ options:
 packages:
   CleanZipKit:
     path: Packages/CleanZipKit
+  # 自動アップデート（Developer ID 直配布なので Sparkle 2 を採用・DESIGN §14）。
+  # ネスト XPC/ヘルパーの再署名は scripts/release.sh が担当（§10）。
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.9.3"
 
 # 全ターゲット共通のビルド設定
 settings:
@@ -35,6 +40,7 @@ targets:
       - Resources
     dependencies:
       - package: CleanZipKit
+      - package: Sparkle                 # 自動アップデート（§14）
       - target: NeatZipFinderExtension   # appex を本体に embed（自動で Embed App Extensions フェーズ）
     settings:
       base:
@@ -54,6 +60,15 @@ targets:
         LSApplicationCategoryType: public.app-category.utilities
         ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: ""
+        # ── Sparkle 自動アップデート（§14）──────────────────────────────────
+        # appcast の公開先。GitHub Releases 配信: 「最新リリースの appcast.xml アセット」を
+        # 指す安定 URL（Pages 不要・各リリースで appcast.xml を再アップロードすれば不変）。
+        # 将来 neatzip.app を取得したらこの値だけ差し替える。
+        SUFeedURL: https://github.com/nawa-10half/neatzip/releases/latest/download/appcast.xml
+        # EdDSA 公開鍵（秘密鍵はリリース PC の Keychain。generate_keys で生成・§10）。
+        SUPublicEDKey: RNOsevwcrlbpmfLAcRIZcJlXGGVHmrNht49Ww/twSjc=
+        # 起動時にバックグラウンドで自動チェック（初回の許可ダイアログを出さず即有効化）。
+        SUEnableAutomaticChecks: true
         # Finder 拡張からの handoff（NSWorkspace.open(urls, withApplicationAt:)）を
         # LaunchServices に許可させるため、任意のファイル/フォルダを開けると宣言する。
         # public.item は全ファイル・フォルダの基底 UTI。Alternate ランクで既定ハンドラにはしない。

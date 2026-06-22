@@ -15,6 +15,10 @@ App/Info.plist
 Extension/Info.plist
 Extension/NeatZipFinderExtension.entitlements
 
+# 設計/意思決定ログは非公開（公開リポには含めない・履歴からも除去済み）。
+# 原本はローカル作業コピー＋ private バックアップ（~/Developer/neatzip-private/）。
+docs/DESIGN.md
+
 # 動作確認の生成物（クリーンZIP の出力やテスト用フォルダ）
 *.zip
 /Test/
