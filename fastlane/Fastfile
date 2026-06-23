@@ -1,0 +1,84 @@
+# NeatZip（macOS / Mac App Store 版）の fastlane。設計は ../swingdiff・../ClassicTimer を踏襲し、
+# iOS → macOS（platform :mac / deliver platform "osx" / .ipa → .pkg）へ読み替えたもの。
+#
+# 方針: ビルドは検証済みの scripts/release-mas.sh（universal arm64+x86_64・automatic 署名・
+#   -allowProvisioningUpdates で Apple Distribution / Installer 証明書・MAS profile を自動生成）を
+#   そのまま流用し、メタデータ管理とアップロードを fastlane(deliver / pilot) に任せる。
+# 認証: App Store Connect API キー方式（同一 TEN HALF アカウント。.p8 秘密鍵は
+#   ~/.appstoreconnect/private_keys/ に置きリポジトリには含めない）。key_id / issuer_id は
+#   秘密情報ではないが、本リポジトリは public なので必要なら ENV 化してよい。
+#
+# 使い方（ASC アプリレコード作成後）:
+#   fastlane mac fetch_metadata     # ASC → ローカル fastlane/metadata/ に取得
+#   （metadata/ を編集）
+#   fastlane mac upload_metadata    # ローカル → ASC（スクショは手動管理のためスキップ）
+#   fastlane mac build              # scripts/release-mas.sh で署名済み .pkg を生成
+#   fastlane mac upload_build       # .pkg を ASC へ（ビルド処理待ちはしない）
+#   fastlane mac release            # build + upload_build を連続実行
+
+default_platform(:mac)
+
+APP_ID = "app.neatzip.NeatZip"
+
+platform :mac do
+  before_all do
+    ENV["FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT"] = "180"
+    ENV["FASTLANE_XCODEBUILD_SETTINGS_RETRIES"] = "5"
+
+    app_store_connect_api_key(
+      key_id: "2TSPA3N6R6",
+      issuer_id: "adf22828-b0bd-4f08-9528-d869800bdffb",
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_2TSPA3N6R6.p8")
+    )
+  end
+
+  desc "App Store Connect からメタデータをダウンロード（ASC レコード作成後）"
+  lane :fetch_metadata do
+    deliver(
+      app_identifier: APP_ID,
+      platform: "osx",
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      run_precheck_before_submit: false,
+      force: true,
+      skip_metadata: false
+    )
+  end
+
+  desc "メタデータを App Store Connect にアップロード（スクショは手動管理のためスキップ）"
+  lane :upload_metadata do
+    deliver(
+      app_identifier: APP_ID,
+      platform: "osx",
+      skip_binary_upload: true,
+      skip_app_version_update: true,
+      skip_screenshots: true,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
+
+  desc "MAS 版を署名済み .pkg にビルド（検証済み scripts/release-mas.sh を実行）"
+  lane :build do
+    # fastlane の sh は fastlane/ で実行されるのでリポジトリルートへ移動して走らせる。
+    sh("cd .. && ./scripts/release-mas.sh")
+  end
+
+  desc "ビルド済みの署名済み .pkg を App Store Connect にアップロード"
+  lane :upload_build do
+    pkg = File.expand_path("../build/mas/export/NeatZip.pkg")
+    UI.user_error!("署名済み .pkg がありません。先に `fastlane mac build` を実行してください: #{pkg}") unless File.exist?(pkg)
+    upload_to_testflight(
+      app_identifier: APP_ID,
+      pkg: pkg,
+      skip_waiting_for_build_processing: true,
+      skip_submission: true
+    )
+  end
+
+  desc "ビルド → アップロード（release-mas.sh で .pkg を作り ASC へ送る）"
+  lane :release do
+    build
+    upload_build
+  end
+end

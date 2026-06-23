@@ -28,6 +28,12 @@ docs/bench-v0.1.1.md
 # Serena MCP の作業用ディレクトリ（プロジェクト固有のキャッシュ）
 .serena/
 
+# fastlane（実行ごとの生成物。Fastfile/Appfile/Deliverfile/metadata は追跡する）
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/*.log
+
 # 速度プロト（DESIGN §5 #11 / prototype/README.md）: 自作ハーネスとパッチは追跡、
 # vendored 上流ソース・ビルド成果物・計測データ・ビルド済みバイナリは除外
 prototype/vendor/
