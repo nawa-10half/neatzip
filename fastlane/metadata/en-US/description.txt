@@ -14,6 +14,9 @@ Lock an archive with a password when you need to. Choose ZipCrypto for maximum c
 FAST
 Parallel compression makes everyday archives noticeably quicker than the built-in Finder compress, while producing standard ZIP files that open anywhere.
 
+COMPRESSION ONLY
+NeatZip makes ZIP files — it does not open or extract them. It is a focused compressor, not an unzip tool (and macOS already extracts ZIP archives with a double-click).
+
 SINGLE-PURPOSE & PRIVATE
 NeatZip does one thing well. No account, no sign-in, and no data collection. It works fully offline, and your files never leave your Mac.
 

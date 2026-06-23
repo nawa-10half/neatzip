@@ -1,1 +1,1 @@
-zip,archive,compress,unzip,clean,DS_Store,password,encrypt,AES,archiver,fast,folder,macos
+zip,archive,compress,clean,DS_Store,password,encrypt,AES,archiver,fast,folder,backup,macos
