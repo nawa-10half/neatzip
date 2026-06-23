@@ -1,0 +1,21 @@
+Make clean ZIP files that open cleanly everywhere — with no Mac clutter hidden inside.
+
+When you compress files with the macOS Finder, the archive often carries hidden Mac-only entries like __MACOSX, .DS_Store, and ._* next to your real files. On Windows or Linux they show up as junk. NeatZip builds the archive from scratch and adds only the items you chose, so the result is clean by construction — not "cleaned up" afterward.
+
+CLEAN BY DESIGN
+__MACOSX, .DS_Store, and ._ (AppleDouble) files are never written in the first place. Your ZIP contains exactly what you see in Finder — nothing more.
+
+RIGHT-CLICK OR DRAG & DROP
+Right-click any file or folder in Finder and choose "Clean ZIP with NeatZip…", or drag items onto the window. One step and you're done.
+
+OPTIONAL PASSWORD
+Lock an archive with a password when you need to. Choose ZipCrypto for maximum compatibility (it opens with a double-click on Windows) or AES-256 for strong encryption.
+
+FAST
+Parallel compression makes everyday archives noticeably quicker than the built-in Finder compress, while producing standard ZIP files that open anywhere.
+
+SINGLE-PURPOSE & PRIVATE
+NeatZip does one thing well. No account, no sign-in, and no data collection. It works fully offline, and your files never leave your Mac.
+
+Support: https://10half.jp/neatzip/support.en.html
+Privacy Policy: https://10half.jp/neatzip/privacy.en.html

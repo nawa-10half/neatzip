@@ -1,0 +1,9 @@
+NeatZip is a single-purpose utility that creates "clean" ZIP archives — ZIPs that do not contain macOS-only metadata such as __MACOSX, .DS_Store, or ._* files.
+
+How to test:
+1) Drag any file or folder onto the NeatZip window, OR
+2) In Finder, Control-click (right-click) a file or folder and choose Services > "Clean ZIP with NeatZip…".
+
+A small panel then lets you optionally set a password (ZipCrypto for compatibility, or AES-256 for strong encryption). Because the app is sandboxed, the resulting .zip is written through the standard save panel (it defaults to the same folder as the source).
+
+No account, login, or in-app purchase is required to use the app. NeatZip collects no data and works fully offline.

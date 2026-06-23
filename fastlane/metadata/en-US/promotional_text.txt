@@ -1,0 +1,1 @@
+Build a clean ZIP with one right-click — no __MACOSX or .DS_Store inside. Optional password (ZipCrypto or AES-256). Fast, single-purpose, fully offline.
