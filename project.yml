@@ -58,7 +58,12 @@ targetTemplates:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
         LSApplicationCategoryType: public.app-category.utilities
-        ITSAppUsesNonExemptEncryption: false
+        # 輸出コンプラ（§12）: NeatZip は AES-256 でファイルを暗号化する＝暗号利用機能なので true が正答
+        # （免除 false は HTTPS 等「OS 内蔵の付随的暗号」のみの場合。暗号が主機能のアプリには不適）。
+        # ただし AES は WinZip AES/PBKDF2/HMAC＝業界標準（独自実装なし）＝mass-market 5D992.c なので
+        # CCATS 不要・2021年改正で年次自己分類レポートも不要（報告義務は 5A002/5D002 の 740.17(b)(1) 品のみ）。
+        # 仏宣言は France 配信時のみ＝ASC の質問票に従う。両ターゲット共通（Dev ID 版では本キーは未使用）。
+        ITSAppUsesNonExemptEncryption: true
         NSHumanReadableCopyright: ""
         # 「このアプリで開く」/ Dock アイコンへのドロップで任意のファイル/フォルダを受ける宣言。
         CFBundleDocumentTypes:
