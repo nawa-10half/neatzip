@@ -43,7 +43,10 @@ targetTemplates:
     type: application
     platform: macOS
     sources:
-      - App
+      - path: App
+        excludes:
+          - "Info.plist"       # Developer ID 用・info.path で個別に指定するため resources から除外
+          - "Info-MAS.plist"   # MAS 用・同上
       - Resources
     settings:
       base:
