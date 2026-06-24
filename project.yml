@@ -30,7 +30,9 @@ packages:
 settings:
   base:
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "2"
+    # ビルド番号は全リリースで単調増加（Sparkle/Dev ID は CFBundleVersion で新旧判定するため）。
+    # 履歴: 0.1.0=1 / 0.1.1=2 → 1.0=3。MAS(App Store)も増加していれば良く問題なし。
+    CURRENT_PROJECT_VERSION: "3"
     SWIFT_VERSION: "5.0"          # Swift 5 言語モード（シングルトン/DispatchQueue をそのまま通す）
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""          # ローカルは未設定（ビルド確認は CODE_SIGNING_ALLOWED=NO）
