@@ -4,8 +4,9 @@
 "menu.checkForUpdates" = "Check for Updates…";
 
 /* Drop window */
-"drop.title" = "Drop files / folders here";
-"drop.subtitle" = "Creates a clean ZIP without __MACOSX / .DS_Store";
+"drop.title" = "Drop files to make a clean ZIP";
+"drop.subtitle" = "or right-click in Finder → Clean ZIP with NeatZip";
+"tooltip.settings" = "Settings";
 
 /* Onboarding */
 "onboarding.title" = "Welcome to NeatZip";

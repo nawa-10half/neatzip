@@ -4,8 +4,9 @@
 "menu.checkForUpdates" = "アップデートを確認…";
 
 /* ドロップ窓 */
-"drop.title" = "ここにファイル / フォルダをドロップ";
-"drop.subtitle" = "__MACOSX・.DS_Store を除いたクリーンZIPを作成";
+"drop.title" = "ドロップしてクリーンZIPを作成";
+"drop.subtitle" = "または Finder で右クリック →「Clean ZIP with NeatZip」";
+"tooltip.settings" = "設定";
 
 /* オンボーディング */
 "onboarding.title" = "NeatZip へようこそ";
