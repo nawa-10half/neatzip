@@ -58,6 +58,20 @@ platform :mac do
     )
   end
 
+  desc "スクリーンショットを App Store Connect にアップロード（fastlane/screenshots/<locale>/・メタ/ビルドは触らない）"
+  lane :upload_screenshots do
+    deliver(
+      app_identifier: APP_ID,
+      platform: "osx",
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_app_version_update: true,
+      run_precheck_before_submit: false,
+      force: true,
+      overwrite_screenshots: true
+    )
+  end
+
   desc "MAS 版を署名済み .pkg にビルド（検証済み scripts/release-mas.sh を実行）"
   lane :build do
     # fastlane の sh は fastlane/ で実行されるのでリポジトリルートへ移動して走らせる。
