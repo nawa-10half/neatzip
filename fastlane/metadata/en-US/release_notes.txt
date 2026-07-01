@@ -1,1 +1,1 @@
-First release on the Mac App Store. Create clean ZIP archives with a right-click — no Mac-only clutter inside — with an optional ZipCrypto or AES-256 password.
+First release on the Mac App Store. Create clean ZIP archives with a right-click — no hidden clutter inside — with an optional ZipCrypto or AES-256 password.
